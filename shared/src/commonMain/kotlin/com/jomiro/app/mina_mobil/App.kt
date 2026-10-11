@@ -266,7 +266,7 @@ private fun SignedInScreen(userId: Long, name: String, email: String, cashRegist
                                 selectedOrderSection != null -> selectedOrderSection!!.titulo
                                 else -> "Detalle de orden"
                             },
-                            color = Ink,
+                            color = Color.White,
                             fontWeight = FontWeight.SemiBold,
                         )
                     },
@@ -276,18 +276,23 @@ private fun SignedInScreen(userId: Long, name: String, email: String, cashRegist
                                 if (selectedOrderSection != null) selectedOrderSection = null
                                 else selectedOrderId = null
                             }) {
-                                Text("←", color = Ink, fontSize = 25.sp)
+                                Text("←", color = Color.White, fontSize = 25.sp)
                             }
                         } else {
                             IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
-                                Text("☰", color = Ink, fontSize = 23.sp)
+                                Text("☰", color = Color.White, fontSize = 23.sp)
                             }
                         }
                     },
                     actions = {
                         // Reservado para acciones contextuales que se definirán por módulo.
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.White),
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Teal,
+                        titleContentColor = Color.White,
+                        navigationIconContentColor = Color.White,
+                        actionIconContentColor = Color.White,
+                    ),
                 )
             },
         ) { contentPadding ->
