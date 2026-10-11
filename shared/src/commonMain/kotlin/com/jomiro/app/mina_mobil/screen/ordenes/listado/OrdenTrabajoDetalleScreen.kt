@@ -25,6 +25,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.TimePicker
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -848,6 +851,7 @@ private fun CrearTrabajoEmpleadoDialog(
     var observations by remember(process.id) { mutableStateOf("") }
     var openSelector by remember { mutableStateOf<String?>(null) }
     var showDatePicker by remember(process.id) { mutableStateOf(false) }
+    var showTimePicker by remember(process.id) { mutableStateOf<String?>(null) }
     LaunchedEffect(opciones) {
         if (employeeId == null) employeeId = opciones?.empleados?.firstOrNull()?.id
         if (paymentTypeId == null) paymentTypeId = opciones?.tiposPago?.firstOrNull()?.id
@@ -897,22 +901,16 @@ private fun CrearTrabajoEmpleadoDialog(
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
+                    EmployeeTimePickerButton(
+                        label = "Hora inicio",
                         value = startTime,
-                        onValueChange = { startTime = it },
                         modifier = Modifier.weight(1f),
-                        label = { Text("Hora inicio") },
-                        placeholder = { Text("HH:mm") },
-                        singleLine = true,
-                    )
-                    OutlinedTextField(
+                    ) { showTimePicker = "start" }
+                    EmployeeTimePickerButton(
+                        label = "Hora fin",
                         value = endTime,
-                        onValueChange = { endTime = it },
                         modifier = Modifier.weight(1f),
-                        label = { Text("Hora fin") },
-                        placeholder = { Text("HH:mm") },
-                        singleLine = true,
-                    )
+                    ) { showTimePicker = "end" }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
@@ -1009,6 +1007,70 @@ private fun CrearTrabajoEmpleadoDialog(
         onSelect = { date = it.toString(); showDatePicker = false },
         onDismiss = { showDatePicker = false },
     )
+    showTimePicker?.let { field ->
+        EmployeeTimePickerDialog(
+            title = if (field == "start") "Seleccionar hora de inicio" else "Seleccionar hora de fin",
+            initialValue = if (field == "start") startTime else endTime,
+            onDismiss = { showTimePicker = null },
+            onSelect = { selected ->
+                if (field == "start") startTime = selected else endTime = selected
+                showTimePicker = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun EmployeeTimePickerButton(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth().padding(top = 8.dp).height(54.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
+        shape = RoundedCornerShape(11.dp),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(label, color = DetailMuted, fontSize = 10.sp)
+            Text(value.ifBlank { "Seleccionar hora" }, color = DetailInk, fontSize = 14.sp)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EmployeeTimePickerDialog(
+    title: String,
+    initialValue: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    val now = kotlin.time.Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+    val initialHour = initialValue.substringBefore(':').toIntOrNull() ?: now.hour
+    val initialMinute = initialValue.substringAfter(':', "").toIntOrNull() ?: now.minute
+    val pickerState = rememberTimePickerState(
+        initialHour = initialHour.coerceIn(0, 23),
+        initialMinute = initialMinute.coerceIn(0, 59),
+        is24Hour = true,
+    )
+    ComposablesTheme {
+        ComposablesAlertDialog(visible = true, onDismissRequest = onDismiss, paneTitle = title) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(title, color = DetailInk, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(8.dp))
+                TimePicker(state = pickerState)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancelar", color = DetailMuted) }
+                    TextButton(onClick = {
+                        onSelect("${pickerState.hour.toString().padStart(2, '0')}:${pickerState.minute.toString().padStart(2, '0')}")
+                    }) { Text("Aceptar", color = DetailTeal) }
+                }
+            }
+        }
+    }
 }
 
 @Composable
