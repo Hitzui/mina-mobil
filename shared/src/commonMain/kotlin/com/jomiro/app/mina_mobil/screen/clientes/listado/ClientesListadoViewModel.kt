@@ -40,7 +40,7 @@ class ClientesListadoViewModel(
         mutableState.value = ClientesListadoUiState(
             clientes = locales,
             total = locales.size,
-            cargando = locales.isEmpty(),
+            cargando = false,
             paginaActual = if (locales.isEmpty()) 0 else 1,
         )
         if (locales.isEmpty()) sincronizarDesdeApi()

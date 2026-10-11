@@ -2,6 +2,7 @@ package com.jomiro.app.mina_mobil.network
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.HttpClientEngine
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.header
@@ -19,6 +20,11 @@ object ApiJson {
 
 fun createApiClient(engine: HttpClientEngine): HttpClient = HttpClient(engine) {
     expectSuccess = false
+    install(HttpTimeout) {
+        requestTimeoutMillis = 20_000
+        connectTimeoutMillis = 10_000
+        socketTimeoutMillis = 20_000
+    }
     defaultRequest {
         header(HttpHeaders.Accept, ContentType.Application.Json.toString())
     }
