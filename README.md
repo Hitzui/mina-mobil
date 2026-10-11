@@ -82,6 +82,10 @@ En Windows usa `gradlew.bat`; en macOS/Linux usa `./gradlew`.
 El APK se genera en `androidApp/build/outputs/apk/debug/androidApp-debug.apk`.
 Para iOS, abre `iosApp` con Xcode en macOS.
 
+Para compilar Android se necesita tener instalado Android SDK y configurado
+`ANDROID_HOME` o el archivo local `local.properties` con `sdk.dir`. Ese archivo
+es específico de cada equipo y no se incluye en Git.
+
 ## Diagnóstico de API
 
 Si falla la carga de clientes, la aplicación imprime una línea con el prefijo
