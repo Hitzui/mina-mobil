@@ -81,6 +81,7 @@ fun App() {
                     name = session.name,
                     email = session.email,
                     cashRegister = session.cashRegisterName,
+                    canCreateOrders = "ordenes_trabajo.create" in session.permissions,
                     onLogout = viewModel::logout,
                 )
             } else {
@@ -210,7 +211,14 @@ private enum class AppSection(val title: String, val icon: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SignedInScreen(userId: Long, name: String, email: String, cashRegister: String, onLogout: () -> Unit) {
+private fun SignedInScreen(
+    userId: Long,
+    name: String,
+    email: String,
+    cashRegister: String,
+    canCreateOrders: Boolean,
+    onLogout: () -> Unit,
+) {
     var selectedSection by remember { mutableStateOf(AppSection.HOME) }
     var selectedOrderId by remember { mutableStateOf<Long?>(null) }
     var selectedOrderSection by remember { mutableStateOf<OrdenDetalleSeccion?>(null) }
@@ -311,6 +319,7 @@ private fun SignedInScreen(userId: Long, name: String, email: String, cashRegist
                     if (selectedOrderId == null) {
                         OrdenesTrabajoScreen(
                             userId = userId,
+                            canCreate = canCreateOrders,
                             onShowOrder = { selectedOrderId = it },
                             modifier = Modifier.padding(contentPadding),
                         )

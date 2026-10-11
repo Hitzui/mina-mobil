@@ -7,13 +7,16 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.headers
 import io.ktor.client.request.post
+import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.contentType
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
@@ -22,6 +25,60 @@ class OrdenesRepository(
     private val baseUrl: String,
     private val sessions: SessionRepository,
 ) {
+    suspend fun opcionesFormulario(): OpcionesFormularioOrden {
+        val session = sessions.current()
+            ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/form-options"
+        val response = client.get(endpoint) {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) {
+            val message = runCatching { ApiJson.instance.decodeFromString<ApiError>(body).message }
+                .getOrNull()?.takeIf(String::isNotBlank)
+            throw OrdenesException(message ?: "No se pudieron cargar clientes y unidades para la orden.")
+        }
+        return runCatching { ApiJson.instance.decodeFromString<OpcionesOrdenResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("No se pudieron interpretar los datos del formulario de orden.") }
+    }
+
+    suspend fun crear(
+        clienteId: Long,
+        fecha: String,
+        pesoMineral: Double,
+        unidadPesoId: Long,
+        descripcion: String,
+    ): OrdenTrabajo {
+        val session = sessions.current()
+            ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val endpoint = "${baseUrl.trimEnd('/')}/orders"
+        val response = client.post(endpoint) {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+            contentType(ContentType.Application.Json)
+            setBody(ApiJson.instance.encodeToString(CrearOrdenRequestDto(
+                clientId = clienteId,
+                date = fecha,
+                description = descripcion.trim().ifBlank { null },
+                mineralWeight = pesoMineral,
+                weightUnitId = unidadPesoId,
+            )))
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) {
+            val message = runCatching { ApiJson.instance.decodeFromString<ApiError>(body).message }
+                .getOrNull()?.takeIf(String::isNotBlank)
+            throw OrdenesException(message ?: "No se pudo crear la orden (HTTP ${response.status.value}).")
+        }
+        return runCatching { ApiJson.instance.decodeFromString<OrdenCreadaResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("La orden se guardó, pero no se pudo leer la respuesta del servidor.") }
+    }
+
     suspend fun listar(
         pagina: Int,
         codigo: String? = null,
@@ -136,6 +193,38 @@ class OrdenesRepository(
         const val CALENDAR_PAGE_SIZE = 100
     }
 }
+
+@Serializable
+private data class CrearOrdenRequestDto(
+    @SerialName("cliente_id") val clientId: Long,
+    @SerialName("fecha") val date: String,
+    @SerialName("descripcion") val description: String?,
+    @SerialName("peso_mineral") val mineralWeight: Double,
+    @SerialName("unidad_peso_id") val weightUnitId: Long,
+)
+
+@Serializable
+private data class OpcionesOrdenResponseDto(val data: OpcionesOrdenDto)
+
+@Serializable
+private data class OpcionesOrdenDto(
+    val clients: List<OpcionClienteOrdenDto>,
+    val units: List<OpcionUnidadPesoDto>,
+)
+
+@Serializable
+private data class OpcionClienteOrdenDto(val id: Long, val name: String)
+
+@Serializable
+private data class OpcionUnidadPesoDto(val id: Long, val name: String)
+
+private fun OpcionesOrdenDto.toModel() = OpcionesFormularioOrden(
+    clientes = clients.map { ClienteOpcionOrden(it.id, it.name) },
+    unidades = units.map { UnidadPesoOpcion(it.id, it.name) },
+)
+
+@Serializable
+private data class OrdenCreadaResponseDto(val data: OrdenTrabajoDto)
 
 class OrdenesException(message: String) : Exception(message)
 

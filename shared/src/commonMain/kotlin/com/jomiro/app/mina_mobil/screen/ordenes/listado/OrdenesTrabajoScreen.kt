@@ -21,7 +21,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.AlertDialog as MaterialAlertDialog
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Button
@@ -34,6 +33,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -74,41 +75,63 @@ private val MonthNames = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 fun OrdenesTrabajoScreen(
     userId: Long,
+    canCreate: Boolean = false,
     onShowOrder: (Long) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: OrdenesTrabajoViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     LaunchedEffect(userId) { viewModel.cargarParaUsuario(userId) }
-    var showAddOrderNotice by remember { mutableStateOf(false) }
+    var showCreateOrder by remember { mutableStateOf(false) }
+    LaunchedEffect(state.ordenCreadaId) {
+        state.ordenCreadaId?.let { orderId ->
+            showCreateOrder = false
+            onShowOrder(orderId)
+            viewModel.limpiarResultadoCreacion()
+        }
+    }
 
     Column(modifier.fillMaxSize()) {
-        PullToRefreshBox(
-            isRefreshing = state.refrescando,
-            onRefresh = viewModel::refrescar,
-            modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-        ) {
-            when (state.vista) {
-                VistaOrdenes.LISTADO -> OrdersList(
+        if (showCreateOrder) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                CreateOrderForm(
                     state = state,
-                    onRetry = viewModel::reintentarListado,
-                    onLoadMore = viewModel::cargarMas,
-                    onCodeChange = viewModel::actualizarFiltroCodigo,
-                    onClientChange = viewModel::actualizarFiltroCliente,
-                    onFromChange = viewModel::actualizarFiltroFechaDesde,
-                    onToChange = viewModel::actualizarFiltroFechaHasta,
-                    onApplyFilters = viewModel::aplicarFiltros,
-                    onClearFilters = viewModel::limpiarFiltros,
-                    onShowOrder = onShowOrder,
+                    onClose = {
+                        showCreateOrder = false
+                        viewModel.limpiarResultadoCreacion()
+                    },
+                    onRetryOptions = viewModel::cargarOpcionesFormulario,
+                    onCreate = viewModel::crearOrden,
                 )
-                VistaOrdenes.CALENDARIO -> OrdersCalendar(
-                    state = state,
-                    onPreviousMonth = { viewModel.cambiarMes(-1) },
-                    onNextMonth = { viewModel.cambiarMes(1) },
-                    onSelectDate = viewModel::seleccionarFecha,
-                    onRetry = viewModel::reintentarCalendario,
-                    onShowOrder = onShowOrder,
-                )
+            }
+        } else {
+            PullToRefreshBox(
+                isRefreshing = state.refrescando,
+                onRefresh = viewModel::refrescar,
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            ) {
+                when (state.vista) {
+                    VistaOrdenes.LISTADO -> OrdersList(
+                        state = state,
+                        onRetry = viewModel::reintentarListado,
+                        onLoadMore = viewModel::cargarMas,
+                        onCodeChange = viewModel::actualizarFiltroCodigo,
+                        onClientChange = viewModel::actualizarFiltroCliente,
+                        onFromChange = viewModel::actualizarFiltroFechaDesde,
+                        onToChange = viewModel::actualizarFiltroFechaHasta,
+                        onApplyFilters = viewModel::aplicarFiltros,
+                        onClearFilters = viewModel::limpiarFiltros,
+                        onShowOrder = onShowOrder,
+                    )
+                    VistaOrdenes.CALENDARIO -> OrdersCalendar(
+                        state = state,
+                        onPreviousMonth = { viewModel.cambiarMes(-1) },
+                        onNextMonth = { viewModel.cambiarMes(1) },
+                        onSelectDate = viewModel::seleccionarFecha,
+                        onRetry = viewModel::reintentarCalendario,
+                        onShowOrder = onShowOrder,
+                    )
+                }
             }
         }
 
@@ -125,14 +148,19 @@ fun OrdenesTrabajoScreen(
                 alwaysShowLabel = true,
             )
             Box(Modifier.width(72.dp).height(72.dp), contentAlignment = Alignment.TopCenter) {
-                FloatingActionButton(
-                    onClick = { showAddOrderNotice = true },
-                    modifier = Modifier.padding(top = 2.dp),
-                    containerColor = Teal,
-                    contentColor = Color.White,
-                    shape = RoundedCornerShape(50),
-                ) {
-                    Text("+", fontSize = 32.sp, fontWeight = FontWeight.Light)
+                if (canCreate) {
+                    FloatingActionButton(
+                        onClick = {
+                            viewModel.cargarOpcionesFormulario()
+                            showCreateOrder = true
+                        },
+                        modifier = Modifier.padding(top = 2.dp),
+                        containerColor = Teal,
+                        contentColor = Color.White,
+                        shape = RoundedCornerShape(50),
+                    ) {
+                        Text("+", fontSize = 32.sp, fontWeight = FontWeight.Light)
+                    }
                 }
             }
             NavigationBarItem(
@@ -144,13 +172,170 @@ fun OrdenesTrabajoScreen(
             )
         }
     }
-    if (showAddOrderNotice) {
-        MaterialAlertDialog(
-            onDismissRequest = { showAddOrderNotice = false },
-            title = { Text("Nueva orden") },
-            text = { Text("El formulario para registrar una orden se habilitará en el siguiente paso.") },
-            confirmButton = { TextButton(onClick = { showAddOrderNotice = false }) { Text("Entendido") } },
-        )
+}
+
+@Composable
+private fun CreateOrderForm(
+    state: OrdenesTrabajoUiState,
+    onClose: () -> Unit,
+    onRetryOptions: () -> Unit,
+    onCreate: (Long, String, Double, Long, String) -> Unit,
+) {
+    val today = kotlin.time.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date
+    var selectedClientId by remember { mutableStateOf<Long?>(null) }
+    var selectedUnitId by remember { mutableStateOf<Long?>(null) }
+    var date by remember { mutableStateOf(today.toString()) }
+    var weight by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var showClientPicker by remember { mutableStateOf(false) }
+    var showUnitPicker by remember { mutableStateOf(false) }
+    val options = state.opcionesFormulario
+    LaunchedEffect(options) {
+        if (selectedClientId == null) selectedClientId = options?.clientes?.firstOrNull()?.id
+        if (selectedUnitId == null) selectedUnitId = options?.unidades?.firstOrNull()?.id
+    }
+    val numericWeight = weight.trim().replace(',', '.').toDoubleOrNull()
+    val canSubmit = options != null && selectedClientId != null && selectedUnitId != null &&
+        numericWeight != null && numericWeight > 0 && date.isNotBlank() && !state.creandoOrden &&
+        !state.cargandoOpcionesFormulario
+
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(11.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onClose) { Text("‹  Volver", color = Teal) }
+            Text("Nueva orden", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        }
+        Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(17.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Datos de la orden", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Button(
+                    onClick = { showClientPicker = true },
+                    modifier = Modifier.fillMaxWidth().height(58.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = Ink),
+                ) {
+                    Column(Modifier.fillMaxWidth()) {
+                        Text("Cliente", color = Muted, fontSize = 11.sp)
+                        Text(options?.clientes?.firstOrNull { it.id == selectedClientId }?.nombre ?: "Seleccionar cliente", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                Button(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = Ink),
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column {
+                            Text("Fecha", color = Muted, fontSize = 11.sp)
+                            Text(date.toDisplayDate(), color = Ink)
+                        }
+                        Text("▦", color = Teal, fontSize = 18.sp)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = weight,
+                        onValueChange = { weight = it.filter { character -> character.isDigit() || character == '.' || character == ',' } },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        label = { Text("Peso mineral") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = filterFieldColors(),
+                    )
+                    Button(
+                        onClick = { showUnitPicker = true },
+                        modifier = Modifier.weight(1f).height(56.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = Ink),
+                    ) {
+                        Text(options?.unidades?.firstOrNull { it.id == selectedUnitId }?.nombre ?: "Unidad", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { if (it.length <= 1000) description = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Descripción (opcional)") },
+                    minLines = 3,
+                    maxLines = 5,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = filterFieldColors(),
+                )
+                if (state.cargandoOpcionesFormulario) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CircularProgressIndicator(Modifier.size(18.dp), color = Teal, strokeWidth = 2.dp)
+                        Text("Cargando clientes y unidades…", color = Muted, fontSize = 13.sp)
+                    }
+                }
+                state.errorFormulario?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp) }
+                if (options != null && (options.clientes.isEmpty() || options.unidades.isEmpty())) {
+                    Text("Se necesita al menos un cliente y una unidad de medida activa para crear la orden.", color = Muted, fontSize = 13.sp)
+                }
+                if (state.errorFormulario != null && options == null) {
+                    TextButton(onClick = onRetryOptions, modifier = Modifier.align(Alignment.End)) { Text("Reintentar", color = Teal) }
+                }
+                Button(
+                    onClick = {
+                        val parsedWeight = numericWeight ?: return@Button
+                        onCreate(selectedClientId ?: return@Button, date, parsedWeight, selectedUnitId ?: return@Button, description)
+                    },
+                    enabled = canSubmit,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Teal),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    if (state.creandoOrden) CircularProgressIndicator(Modifier.size(19.dp), color = Color.White, strokeWidth = 2.dp)
+                    else Text("Crear orden")
+                }
+            }
+        }
+    }
+    if (showDatePicker) DateSelectionDialog(
+        initialDate = date,
+        onSelect = { date = it.toString(); showDatePicker = false },
+        onDismiss = { showDatePicker = false },
+    )
+    if (showClientPicker && options != null) OrderOptionDialog(
+        title = "Seleccionar cliente",
+        options = options.clientes.map { it.id to it.nombre },
+        onSelect = { selectedClientId = it; showClientPicker = false },
+        onDismiss = { showClientPicker = false },
+    )
+    if (showUnitPicker && options != null) OrderOptionDialog(
+        title = "Seleccionar unidad",
+        options = options.unidades.map { it.id to it.nombre },
+        onSelect = { selectedUnitId = it; showUnitPicker = false },
+        onDismiss = { showUnitPicker = false },
+    )
+}
+
+@Composable
+private fun OrderOptionDialog(
+    title: String,
+    options: List<Pair<Long, String>>,
+    onSelect: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ComposablesTheme {
+        ComposablesAlertDialog(visible = true, onDismissRequest = onDismiss, paneTitle = title) {
+            Column {
+                Text(title, color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                LazyColumn(Modifier.height(260.dp).padding(top = 8.dp)) {
+                    items(options, key = { it.first }) { (id, label) ->
+                        TextButton(onClick = { onSelect(id) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(label, color = Ink, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                    if (options.isEmpty()) item { Text("No hay opciones disponibles.", color = Muted, modifier = Modifier.padding(12.dp)) }
+                }
+                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("Cerrar", color = Teal) }
+            }
+        }
     }
 }
 

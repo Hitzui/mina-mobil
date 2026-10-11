@@ -19,6 +19,15 @@ data class PaginaOrdenes(
     val total: Int,
 )
 
+data class ClienteOpcionOrden(val id: Long, val nombre: String)
+
+data class UnidadPesoOpcion(val id: Long, val nombre: String)
+
+data class OpcionesFormularioOrden(
+    val clientes: List<ClienteOpcionOrden>,
+    val unidades: List<UnidadPesoOpcion>,
+)
+
 data class DetalleOrdenTrabajo(
     val orden: OrdenTrabajo,
     val procesos: List<ProcesoOrdenTrabajo>,

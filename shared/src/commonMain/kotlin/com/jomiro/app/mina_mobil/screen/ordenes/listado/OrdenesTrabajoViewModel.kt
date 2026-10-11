@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.jomiro.app.mina_mobil.data.clientes.Cliente
 import com.jomiro.app.mina_mobil.data.clientes.ClientesRepository
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.OpcionesFormularioOrden
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenesRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +42,11 @@ data class OrdenesTrabajoUiState(
     val refrescando: Boolean = false,
     val error: String? = null,
     val errorCalendario: String? = null,
+    val opcionesFormulario: OpcionesFormularioOrden? = null,
+    val cargandoOpcionesFormulario: Boolean = false,
+    val creandoOrden: Boolean = false,
+    val errorFormulario: String? = null,
+    val ordenCreadaId: Long? = null,
 ) {
     val hayMas: Boolean get() = paginaActual < ultimaPagina
 }
@@ -162,6 +168,53 @@ class OrdenesTrabajoViewModel(
     fun refrescar() {
         if (mutableState.value.vista == VistaOrdenes.CALENDARIO) cargarMes(forzar = true)
         else cargarPrimeraPagina(refrescando = true)
+    }
+
+    fun cargarOpcionesFormulario() {
+        if (mutableState.value.cargandoOpcionesFormulario) return
+        mutableState.update {
+            it.copy(cargandoOpcionesFormulario = true, errorFormulario = null, ordenCreadaId = null)
+        }
+        viewModelScope.launch {
+            runCatching { repository.opcionesFormulario() }
+                .onSuccess { options ->
+                    mutableState.update {
+                        it.copy(opcionesFormulario = options, cargandoOpcionesFormulario = false)
+                    }
+                }
+                .onFailure { error ->
+                    mutableState.update {
+                        it.copy(
+                            cargandoOpcionesFormulario = false,
+                            errorFormulario = error.message ?: "No se pudieron cargar los datos del formulario.",
+                        )
+                    }
+                }
+        }
+    }
+
+    fun crearOrden(clienteId: Long, fecha: String, pesoMineral: Double, unidadPesoId: Long, descripcion: String) {
+        if (mutableState.value.creandoOrden) return
+        mutableState.update { it.copy(creandoOrden = true, errorFormulario = null) }
+        viewModelScope.launch {
+            runCatching { repository.crear(clienteId, fecha, pesoMineral, unidadPesoId, descripcion) }
+                .onSuccess { order ->
+                    mutableState.update { it.copy(creandoOrden = false, ordenCreadaId = order.id) }
+                    refrescar()
+                }
+                .onFailure { error ->
+                    mutableState.update {
+                        it.copy(
+                            creandoOrden = false,
+                            errorFormulario = error.message ?: "No se pudo crear la orden.",
+                        )
+                    }
+                }
+        }
+    }
+
+    fun limpiarResultadoCreacion() {
+        mutableState.update { it.copy(ordenCreadaId = null, errorFormulario = null) }
     }
 
     private fun cargarPrimeraPagina(refrescando: Boolean = false) {
