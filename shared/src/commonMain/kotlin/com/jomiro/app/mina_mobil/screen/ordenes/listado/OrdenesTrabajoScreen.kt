@@ -76,7 +76,9 @@ private val MonthNames = listOf(
 fun OrdenesTrabajoScreen(
     userId: Long,
     canCreate: Boolean = false,
+    canEdit: Boolean = false,
     onShowOrder: (Long) -> Unit,
+    onEditOrder: (Long) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: OrdenesTrabajoViewModel = koinViewModel(),
 ) {
@@ -122,6 +124,8 @@ fun OrdenesTrabajoScreen(
                         onApplyFilters = viewModel::aplicarFiltros,
                         onClearFilters = viewModel::limpiarFiltros,
                         onShowOrder = onShowOrder,
+                        canEditOrder = canEdit,
+                        onEditOrder = onEditOrder,
                     )
                     VistaOrdenes.CALENDARIO -> OrdersCalendar(
                         state = state,
@@ -130,6 +134,8 @@ fun OrdenesTrabajoScreen(
                         onSelectDate = viewModel::seleccionarFecha,
                         onRetry = viewModel::reintentarCalendario,
                         onShowOrder = onShowOrder,
+                        canEditOrder = canEdit,
+                        onEditOrder = onEditOrder,
                     )
                 }
             }
@@ -351,6 +357,8 @@ private fun OrdersList(
     onApplyFilters: () -> Unit,
     onClearFilters: () -> Unit,
     onShowOrder: (Long) -> Unit,
+    canEditOrder: Boolean,
+    onEditOrder: (Long) -> Unit,
 ) {
     when {
         state.cargando && state.ordenes.isEmpty() -> LoadingOrders()
@@ -366,7 +374,9 @@ private fun OrdersList(
             }
             if (state.error != null) item { Text(state.error, color = Color(0xFFB33A3A)) }
             if (state.ordenes.isEmpty()) item { EmptyOrders("No se encontraron órdenes con esos filtros.") }
-            items(state.ordenes, key = OrdenTrabajo::id) { order -> OrderCard(order, onShowOrder) }
+            items(state.ordenes, key = OrdenTrabajo::id) { order ->
+                OrderCard(order, onShowOrder, if (canEditOrder) onEditOrder else null)
+            }
             if (state.hayMas) {
                 item {
                     Button(
@@ -595,6 +605,8 @@ private fun OrdersCalendar(
     onSelectDate: (LocalDate) -> Unit,
     onRetry: () -> Unit,
     onShowOrder: (Long) -> Unit,
+    canEditOrder: Boolean,
+    onEditOrder: (Long) -> Unit,
 ) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         Card(
@@ -685,7 +697,9 @@ private fun OrdersCalendar(
                     modifier = Modifier.padding(start = 3.dp, bottom = 9.dp),
                 )
                 if (selectedOrders.isEmpty()) EmptyOrders("No hay órdenes para este día.")
-                else selectedOrders.forEach { OrderCard(it, onShowOrder) }
+                else selectedOrders.forEach { order ->
+                    OrderCard(order, onShowOrder, if (canEditOrder) onEditOrder else null)
+                }
             }
         }
         Spacer(Modifier.height(14.dp))
@@ -704,7 +718,7 @@ private fun MonthButton(text: String, onClick: () -> Unit) {
 }
 
 @Composable
-private fun OrderCard(order: OrdenTrabajo, onShowOrder: (Long) -> Unit) {
+private fun OrderCard(order: OrdenTrabajo, onShowOrder: (Long) -> Unit, onEditOrder: ((Long) -> Unit)?) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = Color.White),
@@ -741,7 +755,11 @@ private fun OrderCard(order: OrdenTrabajo, onShowOrder: (Long) -> Unit) {
                 TextButton(onClick = { onShowOrder(order.id) }) {
                     Text("◉  Ver", color = Teal, fontWeight = FontWeight.SemiBold)
                 }
-                TextButton(onClick = { }) { Text("✎  Editar", color = Teal, fontWeight = FontWeight.SemiBold) }
+                if (onEditOrder != null) {
+                    TextButton(onClick = { onEditOrder(order.id) }) {
+                        Text("✎  Editar", color = Teal, fontWeight = FontWeight.SemiBold)
+                    }
+                }
             }
         }
     }

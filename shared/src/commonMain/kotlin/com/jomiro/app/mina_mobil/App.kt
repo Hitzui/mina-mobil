@@ -352,12 +352,20 @@ private fun SignedInScreen(
                         OrdenesTrabajoScreen(
                             userId = userId,
                             canCreate = canCreateOrders,
+                            canEdit = canEditOrders,
                             onShowOrder = {
                                 selectedOrderSection = null
                                 equipmentProcessId = null
                                 workProcessId = null
                                 editingOrder = false
                                 selectedOrderId = it
+                            },
+                            onEditOrder = {
+                                selectedOrderSection = null
+                                equipmentProcessId = null
+                                workProcessId = null
+                                selectedOrderId = it
+                                editingOrder = true
                             },
                             modifier = Modifier.padding(contentPadding),
                         )

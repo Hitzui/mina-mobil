@@ -111,8 +111,8 @@ class OrdenesRepository(
             }
             contentType(ContentType.Application.Json)
             setBody(ApiJson.instance.encodeToString(ActualizarOrdenRequestDto(
-                clientId = if (tieneProcesos) null else clienteId,
-                date = fecha,
+                clientId = clienteId,
+                date = if (tieneProcesos) null else fecha,
                 description = descripcion.trim().ifBlank { null },
                 mineralWeight = if (tieneProcesos) null else pesoMineral,
                 weightUnitId = if (tieneProcesos) null else unidadPesoId,
@@ -452,8 +452,8 @@ private data class CrearOrdenRequestDto(
 
 @Serializable
 private data class ActualizarOrdenRequestDto(
-    @SerialName("cliente_id") val clientId: Long?,
-    @SerialName("fecha") val date: String,
+    @SerialName("cliente_id") val clientId: Long,
+    @SerialName("fecha") val date: String?,
     @SerialName("descripcion") val description: String?,
     @SerialName("peso_mineral") val mineralWeight: Double?,
     @SerialName("unidad_peso_id") val weightUnitId: Long?,
@@ -469,7 +469,6 @@ private data class EdicionOrdenResponseDto(val data: EdicionOrdenDto)
 private data class EdicionOrdenDto(
     val order: OrdenEditableDto,
     @SerialName("has_processes") val hasProcesses: Boolean,
-    @SerialName("earliest_process_start") val earliestProcessStart: String? = null,
     val clients: List<ClienteEditableDto>,
     val units: List<OpcionUnidadPesoDto>,
 )
@@ -519,7 +518,6 @@ private fun EdicionOrdenDto.toModel() = FormularioEdicionOrden(
     clienteId = order.clientId,
     unidadPesoId = order.weightUnitId,
     tieneProcesos = hasProcesses,
-    fechaInicioProcesoMasTemprana = earliestProcessStart,
     clientes = clients.map { ClienteOpcionOrden(it.id, it.name) },
     unidades = units.map { UnidadPesoOpcion(it.id, it.name) },
 )

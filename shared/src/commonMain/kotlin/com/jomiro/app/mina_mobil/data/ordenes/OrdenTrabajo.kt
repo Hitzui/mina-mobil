@@ -33,7 +33,6 @@ data class FormularioEdicionOrden(
     val clienteId: Long,
     val unidadPesoId: Long?,
     val tieneProcesos: Boolean,
-    val fechaInicioProcesoMasTemprana: String?,
     val clientes: List<ClienteOpcionOrden>,
     val unidades: List<UnidadPesoOpcion>,
 )

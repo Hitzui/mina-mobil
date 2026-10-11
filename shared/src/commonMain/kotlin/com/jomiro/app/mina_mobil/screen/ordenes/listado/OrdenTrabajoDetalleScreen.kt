@@ -112,6 +112,9 @@ fun OrdenTrabajoDetalleScreen(
     var mostrarConfirmacionFinalizar by remember(ordenId) { mutableStateOf(false) }
     var mostrarFormularioProceso by remember(ordenId) { mutableStateOf(false) }
     LaunchedEffect(ordenId) { viewModel.cargar(ordenId) }
+    LaunchedEffect(ordenId, editingOrder) {
+        if (editingOrder) viewModel.cargarFormularioEdicion(ordenId)
+    }
     LaunchedEffect(state.procesoAgregado) {
         if (state.procesoAgregado) mostrarFormularioProceso = false
     }
@@ -137,7 +140,7 @@ fun OrdenTrabajoDetalleScreen(
             val order = detail.orden
             if (editingOrder) {
                 EditarOrdenScreen(
-                    form = state.formularioEdicion,
+                    form = state.formularioEdicion?.takeIf { it.orden.id == ordenId },
                     loading = state.cargandoFormularioEdicion,
                     saving = state.guardandoEdicion,
                     saved = state.edicionGuardada,
@@ -235,7 +238,6 @@ fun OrdenTrabajoDetalleScreen(
                             mostrarFormularioProceso = true
                         },
                     onEditOrder = {
-                        viewModel.cargarFormularioEdicion(ordenId)
                         onEditOrder()
                     },
                     onAddWork = { process ->
@@ -559,11 +561,8 @@ private fun EditarOrdenScreen(
     var showUnitPicker by remember(order.id) { mutableStateOf(false) }
 
     val parsedWeight = weight.trim().replace(',', '.').toDoubleOrNull()
-    val chronologyError = form.fechaInicioProcesoMasTemprana?.takeIf { form.tieneProcesos && date > it }?.let {
-        "La fecha de la orden no puede ser posterior al inicio de un proceso ($it)."
-    }
-    val valid = date.isNotBlank() && chronologyError == null && description.length <= 1000 &&
-        (form.tieneProcesos || (clientId > 0 && parsedWeight != null && parsedWeight > 0 && unitId != null)) &&
+    val valid = clientId > 0 && description.length <= 1000 &&
+        (form.tieneProcesos || (date.isNotBlank() && parsedWeight != null && parsedWeight > 0 && unitId != null)) &&
         !loading && !saving && !saved
 
     Column(
@@ -578,36 +577,35 @@ private fun EditarOrdenScreen(
                 if (form.tieneProcesos) {
                     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(11.dp), color = Color(0xFFF1F5F6)) {
                         Text(
-                            "La orden ya tiene procesos asociados. Cliente, peso y unidad se conservan para mantener la consistencia de las operaciones.",
+                            "La orden ya tiene procesos asociados. Puede cambiar el cliente y la descripción; la fecha, el peso y la unidad se mantienen para conservar el historial.",
                             color = DetailMuted,
                             fontSize = 13.sp,
                             modifier = Modifier.padding(12.dp),
                         )
                     }
+                }
+                EditOrderSelectButton(
+                    label = "Cliente",
+                    value = form.clientes.firstOrNull { it.id == clientId }?.nombre ?: "Seleccionar cliente",
+                    onClick = { showClientPicker = true },
+                )
+                if (form.tieneProcesos) {
+                    DetailField("Fecha de la orden", formatDetailDate(order.fecha))
                 } else {
-                    EditOrderSelectButton(
-                        label = "Cliente",
-                        value = form.clientes.firstOrNull { it.id == clientId }?.nombre ?: "Seleccionar cliente",
-                        onClick = { showClientPicker = true },
-                    )
-                }
-                Button(
-                    onClick = { showDatePicker = true },
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
-                ) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column {
-                            Text("Fecha de la orden", color = DetailMuted, fontSize = 11.sp)
-                            Text(date.toDisplayDate(), color = DetailInk)
+                    Button(
+                        onClick = { showDatePicker = true },
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
+                    ) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text("Fecha de la orden", color = DetailMuted, fontSize = 11.sp)
+                                Text(date.toDisplayDate(), color = DetailInk)
+                            }
+                            Text("▦", color = DetailTeal, fontSize = 18.sp)
                         }
-                        Text("▦", color = DetailTeal, fontSize = 18.sp)
                     }
-                }
-                chronologyError?.let {
-                    Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp)
-                    Text("Fecha máxima permitida: ${form.fechaInicioProcesoMasTemprana.orEmpty().toDisplayDate()}.", color = DetailMuted, fontSize = 12.sp)
                 }
                 if (!form.tieneProcesos) {
                     Row(horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -639,7 +637,7 @@ private fun EditarOrdenScreen(
                     maxLines = 5,
                     shape = RoundedCornerShape(12.dp),
                 )
-                if (form.clientes.isEmpty() && !form.tieneProcesos) {
+                if (form.clientes.isEmpty()) {
                     Text("No hay clientes disponibles para seleccionar.", color = DetailMuted, fontSize = 13.sp)
                 }
                 error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp) }
