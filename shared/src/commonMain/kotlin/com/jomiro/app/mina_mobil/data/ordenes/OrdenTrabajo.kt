@@ -28,6 +28,16 @@ data class OpcionesFormularioOrden(
     val unidades: List<UnidadPesoOpcion>,
 )
 
+data class FormularioEdicionOrden(
+    val orden: OrdenTrabajo,
+    val clienteId: Long,
+    val unidadPesoId: Long?,
+    val tieneProcesos: Boolean,
+    val fechaInicioProcesoMasTemprana: String?,
+    val clientes: List<ClienteOpcionOrden>,
+    val unidades: List<UnidadPesoOpcion>,
+)
+
 data class DetalleOrdenTrabajo(
     val orden: OrdenTrabajo,
     val procesos: List<ProcesoOrdenTrabajo>,

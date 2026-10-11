@@ -8,6 +8,7 @@ import com.jomiro.app.mina_mobil.data.ordenes.OpcionesTrabajoEmpleado
 import com.jomiro.app.mina_mobil.data.ordenes.TarifaTrabajoEmpleado
 import com.jomiro.app.mina_mobil.data.ordenes.OpcionesEquipoProceso
 import com.jomiro.app.mina_mobil.data.ordenes.DepreciacionEquipoProceso
+import com.jomiro.app.mina_mobil.data.ordenes.FormularioEdicionOrden
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenesRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +42,11 @@ data class OrdenTrabajoDetalleUiState(
     val asignandoEquipo: Boolean = false,
     val equipoAsignado: Boolean = false,
     val errorEquipo: String? = null,
+    val formularioEdicion: FormularioEdicionOrden? = null,
+    val cargandoFormularioEdicion: Boolean = false,
+    val guardandoEdicion: Boolean = false,
+    val edicionGuardada: Boolean = false,
+    val errorEdicion: String? = null,
 )
 
 class OrdenTrabajoDetalleViewModel(
@@ -352,6 +358,76 @@ class OrdenTrabajoDetalleViewModel(
                 opcionesEquipo = null,
                 depreciacionEquipo = null,
                 calculandoDepreciacionEquipo = false,
+            )
+        }
+    }
+
+    fun cargarFormularioEdicion(ordenId: Long) {
+        if (mutableState.value.cargandoFormularioEdicion) return
+        mutableState.update {
+            it.copy(
+                formularioEdicion = null,
+                cargandoFormularioEdicion = true,
+                edicionGuardada = false,
+                errorEdicion = null,
+            )
+        }
+        viewModelScope.launch {
+            runCatching { repository.opcionesEdicion(ordenId) }
+                .onSuccess { form ->
+                    mutableState.update { it.copy(formularioEdicion = form, cargandoFormularioEdicion = false) }
+                }
+                .onFailure { error ->
+                    mutableState.update {
+                        it.copy(cargandoFormularioEdicion = false, errorEdicion = error.message ?: "No se pudo cargar el formulario de edición.")
+                    }
+                }
+        }
+    }
+
+    fun actualizarOrden(
+        ordenId: Long,
+        clienteId: Long,
+        fecha: String,
+        pesoMineral: Double,
+        unidadPesoId: Long,
+        descripcion: String,
+    ) {
+        val form = mutableState.value.formularioEdicion ?: return
+        if (mutableState.value.guardandoEdicion) return
+        mutableState.update { it.copy(guardandoEdicion = true, errorEdicion = null, edicionGuardada = false) }
+        viewModelScope.launch {
+            runCatching {
+                repository.actualizar(
+                    ordenId, clienteId, fecha, pesoMineral, unidadPesoId,
+                    descripcion, form.tieneProcesos,
+                )
+            }.onSuccess { order ->
+                mutableState.update { current ->
+                    current.copy(
+                        detalle = current.detalle?.copy(orden = order),
+                        formularioEdicion = current.formularioEdicion?.copy(orden = order),
+                        guardandoEdicion = false,
+                        edicionGuardada = true,
+                        errorEdicion = null,
+                    )
+                }
+            }.onFailure { error ->
+                mutableState.update {
+                    it.copy(guardandoEdicion = false, errorEdicion = error.message ?: "No se pudo actualizar la orden.")
+                }
+            }
+        }
+    }
+
+    fun limpiarResultadoEdicion() {
+        mutableState.update {
+            it.copy(
+                formularioEdicion = null,
+                cargandoFormularioEdicion = false,
+                guardandoEdicion = false,
+                edicionGuardada = false,
+                errorEdicion = null,
             )
         }
     }

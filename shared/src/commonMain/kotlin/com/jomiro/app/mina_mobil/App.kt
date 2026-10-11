@@ -83,6 +83,7 @@ fun App() {
                     email = session.email,
                     cashRegister = session.cashRegisterName,
                     canCreateOrders = "ordenes_trabajo.create" in session.permissions,
+                    canEditOrders = "ordenes_trabajo.edit" in session.permissions,
                     canCreateProcesses = "procesos_orden.create" in session.permissions,
                     canViewEmployees = "empleados.view" in session.permissions,
                     canViewEmployeeWork = "trabajos_empleado.view" in session.permissions,
@@ -225,6 +226,7 @@ private fun SignedInScreen(
     email: String,
     cashRegister: String,
     canCreateOrders: Boolean,
+    canEditOrders: Boolean,
     canCreateProcesses: Boolean,
     canViewEmployees: Boolean,
     canViewEmployeeWork: Boolean,
@@ -238,6 +240,7 @@ private fun SignedInScreen(
     var selectedOrderSection by remember { mutableStateOf<OrdenDetalleSeccion?>(null) }
     var equipmentProcessId by remember { mutableStateOf<Long?>(null) }
     var workProcessId by remember { mutableStateOf<Long?>(null) }
+    var editingOrder by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
 
@@ -260,6 +263,7 @@ private fun SignedInScreen(
                                 selectedOrderSection = null
                                 equipmentProcessId = null
                                 workProcessId = null
+                                editingOrder = false
                                 coroutineScope.launch { drawerState.close() }
                             },
                             icon = { Text(section.icon, color = if (selectedSection == section) Teal else Muted, fontSize = 20.sp) },
@@ -290,6 +294,7 @@ private fun SignedInScreen(
                             when {
                                 selectedSection != AppSection.WORK_ORDERS || selectedOrderId == null -> selectedSection.title
                                 workProcessId != null -> "Agregar trabajo"
+                                editingOrder -> "Editar orden"
                                 equipmentProcessId != null -> "Asignar equipo"
                                 selectedOrderSection != null -> selectedOrderSection!!.titulo
                                 else -> "Detalle de orden"
@@ -302,6 +307,7 @@ private fun SignedInScreen(
                         if (selectedSection == AppSection.WORK_ORDERS && selectedOrderId != null) {
                             IconButton(onClick = {
                                 if (workProcessId != null) workProcessId = null
+                                else if (editingOrder) editingOrder = false
                                 else if (equipmentProcessId != null) equipmentProcessId = null
                                 else if (selectedOrderSection != null) selectedOrderSection = null
                                 else selectedOrderId = null
@@ -350,6 +356,7 @@ private fun SignedInScreen(
                                 selectedOrderSection = null
                                 equipmentProcessId = null
                                 workProcessId = null
+                                editingOrder = false
                                 selectedOrderId = it
                             },
                             modifier = Modifier.padding(contentPadding),
@@ -358,16 +365,20 @@ private fun SignedInScreen(
                         OrdenTrabajoDetalleScreen(
                             ordenId = selectedOrderId!!,
                             canCreateProcess = canCreateProcesses,
+                            canEditOrder = canEditOrders,
                             canViewEmployeeWork = canViewEmployeeWork,
                             canCreateEmployeeWork = canCreateEmployeeWork,
                             canViewProcessEquipment = canViewProcessEquipment,
                             canCreateProcessEquipment = canCreateProcessEquipment,
                             equipmentProcessId = equipmentProcessId,
                             workProcessId = workProcessId,
+                            editingOrder = editingOrder,
                             onAssignEquipment = { equipmentProcessId = it },
                             onAddEmployeeWork = { workProcessId = it },
+                            onEditOrder = { editingOrder = true },
                             onBackFromEquipment = { equipmentProcessId = null },
                             onBackFromEmployeeWork = { workProcessId = null },
+                            onBackFromOrderEdit = { editingOrder = false },
                             seccion = selectedOrderSection,
                             onSelectSection = { selectedOrderSection = it },
                             modifier = Modifier.padding(contentPadding),

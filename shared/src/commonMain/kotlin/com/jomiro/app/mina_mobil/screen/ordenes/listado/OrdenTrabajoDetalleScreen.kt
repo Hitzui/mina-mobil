@@ -59,6 +59,9 @@ import com.jomiro.app.mina_mobil.data.ordenes.EquipoProcesoOrden
 import com.jomiro.app.mina_mobil.data.ordenes.OpcionesEquipoProceso
 import com.jomiro.app.mina_mobil.data.ordenes.DepreciacionEquipoProceso
 import com.jomiro.app.mina_mobil.data.ordenes.EquipoOpcionProceso
+import com.jomiro.app.mina_mobil.data.ordenes.FormularioEdicionOrden
+import com.jomiro.app.mina_mobil.data.ordenes.ClienteOpcionOrden
+import com.jomiro.app.mina_mobil.data.ordenes.UnidadPesoOpcion
 import com.composables.ui.components.BottomSheet
 import com.composables.ui.components.BottomSheetDetent
 import com.composables.ui.components.AlertDialog as ComposablesAlertDialog
@@ -85,16 +88,20 @@ enum class OrdenDetalleSeccion(val titulo: String, val icono: String) {
 fun OrdenTrabajoDetalleScreen(
     ordenId: Long,
     canCreateProcess: Boolean = false,
+    canEditOrder: Boolean = false,
     canViewEmployeeWork: Boolean = false,
     canCreateEmployeeWork: Boolean = false,
     canViewProcessEquipment: Boolean = false,
     canCreateProcessEquipment: Boolean = false,
     equipmentProcessId: Long? = null,
     workProcessId: Long? = null,
+    editingOrder: Boolean = false,
     onAssignEquipment: (Long) -> Unit = {},
     onAddEmployeeWork: (Long) -> Unit = {},
+    onEditOrder: () -> Unit = {},
     onBackFromEquipment: () -> Unit = {},
     onBackFromEmployeeWork: () -> Unit = {},
+    onBackFromOrderEdit: () -> Unit = {},
     seccion: OrdenDetalleSeccion? = null,
     onSelectSection: (OrdenDetalleSeccion) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -128,7 +135,24 @@ fun OrdenTrabajoDetalleScreen(
         state.detalle != null -> {
             val detail = state.detalle!!
             val order = detail.orden
-            if (workProcessId != null) {
+            if (editingOrder) {
+                EditarOrdenScreen(
+                    form = state.formularioEdicion,
+                    loading = state.cargandoFormularioEdicion,
+                    saving = state.guardandoEdicion,
+                    saved = state.edicionGuardada,
+                    error = state.errorEdicion,
+                    onRetry = { viewModel.cargarFormularioEdicion(ordenId) },
+                    onBack = {
+                        viewModel.limpiarResultadoEdicion()
+                        onBackFromOrderEdit()
+                    },
+                    onSave = { clienteId, fecha, peso, unidadId, descripcion ->
+                        viewModel.actualizarOrden(ordenId, clienteId, fecha, peso, unidadId, descripcion)
+                    },
+                    modifier = modifier,
+                )
+            } else if (workProcessId != null) {
                 val process = detail.procesos.firstOrNull { it.id == workProcessId }
                 if (process == null) {
                     Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
@@ -200,6 +224,7 @@ fun OrdenTrabajoDetalleScreen(
                     modifier = modifier,
                     detalle = detail,
                     puedeAgregarProceso = canCreateProcess && order.codigoEstado != 0 && order.codigoEstado != 3,
+                    puedeEditarOrden = canEditOrder,
                     puedeVerTrabajos = canViewEmployeeWork,
                     puedeAgregarTrabajos = canCreateEmployeeWork && order.codigoEstado != 0 && order.codigoEstado != 3,
                     puedeVerEquipos = canViewProcessEquipment,
@@ -209,6 +234,10 @@ fun OrdenTrabajoDetalleScreen(
                         viewModel.cargarEtapasProceso(ordenId)
                             mostrarFormularioProceso = true
                         },
+                    onEditOrder = {
+                        viewModel.cargarFormularioEdicion(ordenId)
+                        onEditOrder()
+                    },
                     onAddWork = { process ->
                         viewModel.cargarOpcionesTrabajo(ordenId, process.id)
                         onAddEmployeeWork(process.id)
@@ -395,12 +424,14 @@ private fun OrderOverview(
     modifier: Modifier,
     detalle: DetalleOrdenTrabajo,
     puedeAgregarProceso: Boolean,
+    puedeEditarOrden: Boolean,
     puedeVerTrabajos: Boolean,
     puedeAgregarTrabajos: Boolean,
     puedeVerEquipos: Boolean,
     puedeAgregarEquipos: Boolean,
     onOpenSections: () -> Unit,
     onAddProcess: () -> Unit,
+    onEditOrder: () -> Unit,
     onAddWork: (ProcesoOrdenTrabajo) -> Unit,
     onAddEquipment: (ProcesoOrdenTrabajo) -> Unit,
 ) {
@@ -422,6 +453,11 @@ private fun OrderOverview(
                         Text(order.codigo, color = DetailInk, fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     DetailStatusBadge(order)
+                }
+                if (puedeEditarOrden) {
+                    TextButton(onClick = onEditOrder, modifier = Modifier.align(Alignment.End)) {
+                        Text("Editar orden", color = DetailTeal, fontWeight = FontWeight.SemiBold)
+                    }
                 }
                 Spacer(Modifier.height(18.dp))
                 DetailField("Cliente", order.cliente ?: "Sin cliente")
@@ -477,6 +513,196 @@ private fun OrderOverview(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun EditarOrdenScreen(
+    form: FormularioEdicionOrden?,
+    loading: Boolean,
+    saving: Boolean,
+    saved: Boolean,
+    error: String?,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+    onSave: (Long, String, Double, Long, String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (form == null) {
+        Column(
+            modifier.fillMaxSize().padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            if (loading) CircularProgressIndicator(color = DetailTeal)
+            else {
+                Text(error ?: "No se pudo cargar la orden para editar.", color = Color(0xFFB33A3A), fontSize = 14.sp)
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = onBack) { Text("Volver", color = DetailMuted) }
+                    Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = DetailTeal)) { Text("Reintentar") }
+                }
+            }
+        }
+        return
+    }
+
+    val order = form.orden
+    var clientId by remember(order.id) { mutableStateOf(form.clienteId) }
+    var date by remember(order.id) { mutableStateOf(order.fecha.orEmpty()) }
+    var weight by remember(order.id) { mutableStateOf(order.pesoMineral?.toString().orEmpty()) }
+    var unitId by remember(order.id) { mutableStateOf(form.unidadPesoId) }
+    var description by remember(order.id) { mutableStateOf(order.descripcion.orEmpty()) }
+    var showDatePicker by remember(order.id) { mutableStateOf(false) }
+    var showClientPicker by remember(order.id) { mutableStateOf(false) }
+    var showUnitPicker by remember(order.id) { mutableStateOf(false) }
+
+    val parsedWeight = weight.trim().replace(',', '.').toDoubleOrNull()
+    val chronologyError = form.fechaInicioProcesoMasTemprana?.takeIf { form.tieneProcesos && date > it }?.let {
+        "La fecha de la orden no puede ser posterior al inicio de un proceso ($it)."
+    }
+    val valid = date.isNotBlank() && chronologyError == null && description.length <= 1000 &&
+        (form.tieneProcesos || (clientId > 0 && parsedWeight != null && parsedWeight > 0 && unitId != null)) &&
+        !loading && !saving && !saved
+
+    Column(
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(11.dp),
+    ) {
+        Text("Editar orden de trabajo", color = DetailInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+        Text("${order.codigo} · ${order.estado}", color = DetailMuted, fontSize = 13.sp)
+        Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(17.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Información general", color = DetailInk, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                if (form.tieneProcesos) {
+                    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(11.dp), color = Color(0xFFF1F5F6)) {
+                        Text(
+                            "La orden ya tiene procesos asociados. Cliente, peso y unidad se conservan para mantener la consistencia de las operaciones.",
+                            color = DetailMuted,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
+                } else {
+                    EditOrderSelectButton(
+                        label = "Cliente",
+                        value = form.clientes.firstOrNull { it.id == clientId }?.nombre ?: "Seleccionar cliente",
+                        onClick = { showClientPicker = true },
+                    )
+                }
+                Button(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column {
+                            Text("Fecha de la orden", color = DetailMuted, fontSize = 11.sp)
+                            Text(date.toDisplayDate(), color = DetailInk)
+                        }
+                        Text("▦", color = DetailTeal, fontSize = 18.sp)
+                    }
+                }
+                chronologyError?.let {
+                    Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp)
+                    Text("Fecha máxima permitida: ${form.fechaInicioProcesoMasTemprana.orEmpty().toDisplayDate()}.", color = DetailMuted, fontSize = 12.sp)
+                }
+                if (!form.tieneProcesos) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = weight,
+                            onValueChange = { weight = it.filter { char -> char.isDigit() || char == '.' || char == ',' } },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            label = { Text("Peso mineral") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            shape = RoundedCornerShape(12.dp),
+                        )
+                        EditOrderSelectButton(
+                            label = "Unidad",
+                            value = form.unidades.firstOrNull { it.id == unitId }?.nombre ?: "Seleccionar",
+                            modifier = Modifier.weight(1f),
+                            onClick = { showUnitPicker = true },
+                        )
+                    }
+                } else {
+                    DetailField("Peso mineral", "${order.pesoMineral ?: "—"} ${order.unidadPeso.orEmpty()}".trim())
+                }
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { if (it.length <= 1000) description = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Descripción") },
+                    minLines = 3,
+                    maxLines = 5,
+                    shape = RoundedCornerShape(12.dp),
+                )
+                if (form.clientes.isEmpty() && !form.tieneProcesos) {
+                    Text("No hay clientes disponibles para seleccionar.", color = DetailMuted, fontSize = 13.sp)
+                }
+                error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp) }
+                if (saved) {
+                    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(11.dp), color = Color(0xFFE5F4F0)) {
+                        Text("Orden actualizada correctamente.", color = Color(0xFF267A5B), modifier = Modifier.padding(12.dp), fontSize = 13.sp)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    TextButton(onClick = onBack, enabled = !saving, modifier = Modifier.weight(1f)) {
+                        Text("Volver al detalle", color = DetailMuted)
+                    }
+                    Button(
+                        onClick = {
+                            onSave(clientId, date, parsedWeight ?: 0.0, unitId ?: 0L, description)
+                        },
+                        enabled = valid,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
+                        shape = RoundedCornerShape(11.dp),
+                    ) {
+                        if (saving) CircularProgressIndicator(Modifier.height(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        else Text(if (saved) "Actualizada" else "Guardar cambios")
+                    }
+                }
+            }
+        }
+    }
+    if (showDatePicker) DateSelectionDialog(
+        initialDate = date,
+        onSelect = { date = it.toString(); showDatePicker = false },
+        onDismiss = { showDatePicker = false },
+    )
+    if (showClientPicker) EmployeeWorkOptionsDialog(
+        title = "Seleccionar cliente",
+        options = form.clientes.map { it.id to it.nombre },
+        onSelect = { clientId = it; showClientPicker = false },
+        onDismiss = { showClientPicker = false },
+    )
+    if (showUnitPicker) EmployeeWorkOptionsDialog(
+        title = "Seleccionar unidad de peso",
+        options = form.unidades.map { it.id to it.nombre },
+        onSelect = { unitId = it; showUnitPicker = false },
+        onDismiss = { showUnitPicker = false },
+    )
+}
+
+@Composable
+private fun EditOrderSelectButton(
+    label: String,
+    value: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth().height(56.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(label, color = DetailMuted, fontSize = 11.sp)
+            Text(value, color = DetailInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

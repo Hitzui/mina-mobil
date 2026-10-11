@@ -7,6 +7,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.headers
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsText
@@ -77,6 +78,50 @@ class OrdenesRepository(
         }
         return runCatching { ApiJson.instance.decodeFromString<OrdenCreadaResponseDto>(body).data.toModel() }
             .getOrElse { throw OrdenesException("La orden se guardó, pero no se pudo leer la respuesta del servidor.") }
+    }
+
+    suspend fun opcionesEdicion(id: Long): FormularioEdicionOrden {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val response = client.get("${baseUrl.trimEnd('/')}/orders/$id/edit-form-options") {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar los datos para editar la orden.")
+        return runCatching { ApiJson.instance.decodeFromString<EdicionOrdenResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("No se pudo interpretar la información editable de la orden.") }
+    }
+
+    suspend fun actualizar(
+        id: Long,
+        clienteId: Long,
+        fecha: String,
+        pesoMineral: Double,
+        unidadPesoId: Long,
+        descripcion: String,
+        tieneProcesos: Boolean,
+    ): OrdenTrabajo {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val response = client.put("${baseUrl.trimEnd('/')}/orders/$id") {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+            contentType(ContentType.Application.Json)
+            setBody(ApiJson.instance.encodeToString(ActualizarOrdenRequestDto(
+                clientId = if (tieneProcesos) null else clienteId,
+                date = fecha,
+                description = descripcion.trim().ifBlank { null },
+                mineralWeight = if (tieneProcesos) null else pesoMineral,
+                weightUnitId = if (tieneProcesos) null else unidadPesoId,
+            )))
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudo actualizar la orden.")
+        return runCatching { ApiJson.instance.decodeFromString<OrdenCreadaResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("La orden se actualizó, pero no se pudo interpretar la respuesta del servidor.") }
     }
 
     suspend fun listar(
@@ -406,7 +451,46 @@ private data class CrearOrdenRequestDto(
 )
 
 @Serializable
+private data class ActualizarOrdenRequestDto(
+    @SerialName("cliente_id") val clientId: Long?,
+    @SerialName("fecha") val date: String,
+    @SerialName("descripcion") val description: String?,
+    @SerialName("peso_mineral") val mineralWeight: Double?,
+    @SerialName("unidad_peso_id") val weightUnitId: Long?,
+)
+
+@Serializable
 private data class OpcionesOrdenResponseDto(val data: OpcionesOrdenDto)
+
+@Serializable
+private data class EdicionOrdenResponseDto(val data: EdicionOrdenDto)
+
+@Serializable
+private data class EdicionOrdenDto(
+    val order: OrdenEditableDto,
+    @SerialName("has_processes") val hasProcesses: Boolean,
+    @SerialName("earliest_process_start") val earliestProcessStart: String? = null,
+    val clients: List<ClienteEditableDto>,
+    val units: List<OpcionUnidadPesoDto>,
+)
+
+@Serializable
+private data class OrdenEditableDto(
+    val id: Long,
+    val code: String,
+    @SerialName("client_id") val clientId: Long,
+    @SerialName("client_name") val clientName: String? = null,
+    val date: String,
+    val description: String? = null,
+    @SerialName("mineral_weight") val mineralWeight: Double,
+    @SerialName("weight_unit_id") val weightUnitId: Long? = null,
+    @SerialName("weight_unit") val weightUnit: String? = null,
+    val status: String,
+    @SerialName("status_code") val statusCode: Int,
+)
+
+@Serializable
+private data class ClienteEditableDto(val id: Long, val name: String, @SerialName("is_active") val isActive: Boolean)
 
 @Serializable
 private data class OpcionesOrdenDto(
@@ -419,6 +503,26 @@ private data class OpcionClienteOrdenDto(val id: Long, val name: String)
 
 @Serializable
 private data class OpcionUnidadPesoDto(val id: Long, val name: String)
+
+private fun EdicionOrdenDto.toModel() = FormularioEdicionOrden(
+    orden = OrdenTrabajo(
+        id = order.id,
+        codigo = order.code,
+        fecha = order.date,
+        cliente = order.clientName,
+        descripcion = order.description,
+        pesoMineral = order.mineralWeight,
+        unidadPeso = order.weightUnit,
+        estado = order.status,
+        codigoEstado = order.statusCode,
+    ),
+    clienteId = order.clientId,
+    unidadPesoId = order.weightUnitId,
+    tieneProcesos = hasProcesses,
+    fechaInicioProcesoMasTemprana = earliestProcessStart,
+    clientes = clients.map { ClienteOpcionOrden(it.id, it.name) },
+    unidades = units.map { UnidadPesoOpcion(it.id, it.name) },
+)
 
 private fun OpcionesOrdenDto.toModel() = OpcionesFormularioOrden(
     clientes = clients.map { ClienteOpcionOrden(it.id, it.name) },
