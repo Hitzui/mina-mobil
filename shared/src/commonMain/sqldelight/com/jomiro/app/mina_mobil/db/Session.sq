@@ -1,0 +1,27 @@
+CREATE TABLE mobile_session (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    token TEXT NOT NULL,
+    expires_at TEXT,
+    user_id INTEGER NOT NULL,
+    user_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    roles_json TEXT NOT NULL,
+    permissions_json TEXT NOT NULL,
+    cash_register_id INTEGER NOT NULL,
+    cash_register_name TEXT NOT NULL
+);
+
+selectSession:
+SELECT * FROM mobile_session WHERE id = 1;
+
+saveSession:
+INSERT OR REPLACE INTO mobile_session (
+    id, token, expires_at, user_id, user_name, email, roles_json,
+    permissions_json, cash_register_id, cash_register_name
+) VALUES (
+    1, :token, :expiresAt, :userId, :userName, :email, :rolesJson,
+    :permissionsJson, :cashRegisterId, :cashRegisterName
+);
+
+clearSession:
+DELETE FROM mobile_session;
