@@ -58,6 +58,7 @@ import com.jomiro.app.mina_mobil.login.LoginViewModel
 import com.jomiro.app.mina_mobil.screen.clientes.listado.ClientesListadoScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenTrabajoDetalleScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenDetalleSeccion
 import org.koin.compose.viewmodel.koinViewModel
 import kotlinx.coroutines.launch
 
@@ -212,6 +213,7 @@ private enum class AppSection(val title: String, val icon: String) {
 private fun SignedInScreen(userId: Long, name: String, email: String, cashRegister: String, onLogout: () -> Unit) {
     var selectedSection by remember { mutableStateOf(AppSection.HOME) }
     var selectedOrderId by remember { mutableStateOf<Long?>(null) }
+    var selectedOrderSection by remember { mutableStateOf<OrdenDetalleSeccion?>(null) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
 
@@ -231,6 +233,7 @@ private fun SignedInScreen(userId: Long, name: String, email: String, cashRegist
                             onClick = {
                                 selectedSection = section
                                 selectedOrderId = null
+                                selectedOrderSection = null
                                 coroutineScope.launch { drawerState.close() }
                             },
                             icon = { Text(section.icon, color = if (selectedSection == section) Teal else Muted, fontSize = 20.sp) },
@@ -258,14 +261,21 @@ private fun SignedInScreen(userId: Long, name: String, email: String, cashRegist
                 TopAppBar(
                     title = {
                         Text(
-                            if (selectedSection == AppSection.WORK_ORDERS && selectedOrderId != null) "Detalle de orden" else selectedSection.title,
+                            when {
+                                selectedSection != AppSection.WORK_ORDERS || selectedOrderId == null -> selectedSection.title
+                                selectedOrderSection != null -> selectedOrderSection!!.titulo
+                                else -> "Detalle de orden"
+                            },
                             color = Ink,
                             fontWeight = FontWeight.SemiBold,
                         )
                     },
                     navigationIcon = {
                         if (selectedSection == AppSection.WORK_ORDERS && selectedOrderId != null) {
-                            IconButton(onClick = { selectedOrderId = null }) {
+                            IconButton(onClick = {
+                                if (selectedOrderSection != null) selectedOrderSection = null
+                                else selectedOrderId = null
+                            }) {
                                 Text("←", color = Ink, fontSize = 25.sp)
                             }
                         } else {
@@ -302,6 +312,8 @@ private fun SignedInScreen(userId: Long, name: String, email: String, cashRegist
                     } else {
                         OrdenTrabajoDetalleScreen(
                             ordenId = selectedOrderId!!,
+                            seccion = selectedOrderSection,
+                            onSelectSection = { selectedOrderSection = it },
                             modifier = Modifier.padding(contentPadding),
                         )
                     }

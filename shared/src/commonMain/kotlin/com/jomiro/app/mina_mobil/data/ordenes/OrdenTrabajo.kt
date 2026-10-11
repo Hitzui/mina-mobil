@@ -24,6 +24,8 @@ data class DetalleOrdenTrabajo(
     val procesos: List<ProcesoOrdenTrabajo>,
     val costos: List<CostoOrdenTrabajo> = emptyList(),
     val ingresos: List<IngresoOrdenTrabajo> = emptyList(),
+    val acuerdos: List<AcuerdoOrdenTrabajo> = emptyList(),
+    val liquidaciones: List<LiquidacionOrdenTrabajo> = emptyList(),
 )
 
 data class ProcesoOrdenTrabajo(
@@ -58,4 +60,27 @@ data class IngresoOrdenTrabajo(
     val moneda: String?,
     val total: String?,
     val totalNio: String?,
+)
+
+data class AcuerdoOrdenTrabajo(
+    val id: Long,
+    val tipoParticipacion: String?,
+    val modalidad: String,
+    val porcentajeCliente: String?,
+    val porcentajeEmpresa: String?,
+    val tarifaServicio: String?,
+    val moneda: String?,
+    val observaciones: String?,
+    val activo: Boolean,
+)
+
+data class LiquidacionOrdenTrabajo(
+    val id: Long,
+    val fecha: String?,
+    val gramosRecuperados: String?,
+    val gramosCliente: String?,
+    val gramosEmpresa: String?,
+    val porcentajeCliente: String?,
+    val porcentajeEmpresa: String?,
+    val observaciones: String?,
 )

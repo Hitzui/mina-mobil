@@ -103,6 +103,31 @@ class OrdenesResponseParsingTest {
                     "total": 2500,
                     "total_nio": "2500.00"
                   }
+                ],
+                "agreements": [
+                  {
+                    "id": 31,
+                    "participation_type": "Mineral procesado",
+                    "modality": "porcentaje",
+                    "client_percentage": "60.0000",
+                    "company_percentage": "40.0000",
+                    "service_fee": null,
+                    "currency": "NIO",
+                    "observations": "Acuerdo de prueba",
+                    "active": true
+                  }
+                ],
+                "liquidations": [
+                  {
+                    "id": 35,
+                    "date": "2026-10-12",
+                    "recovered_grams": "10.0000",
+                    "client_grams": "6.0000",
+                    "company_grams": "4.0000",
+                    "client_percentage": "60.0000",
+                    "company_percentage": "40.0000",
+                    "observations": "Lote revisado"
+                  }
                 ]
               }
             }
@@ -112,6 +137,8 @@ class OrdenesResponseParsingTest {
         val process = detail.procesos.single()
         val cost = detail.costos.single()
         val income = detail.ingresos.single()
+        val agreement = detail.acuerdos.single()
+        val liquidation = detail.liquidaciones.single()
 
         assertEquals(42L, detail.orden.id)
         assertEquals("OT-0042", detail.orden.codigo)
@@ -126,5 +153,10 @@ class OrdenesResponseParsingTest {
         assertEquals("1281.50", cost.totalNio)
         assertEquals("Venta de mineral", income.tipo)
         assertEquals("2500", income.total)
+        assertEquals("Mineral procesado", agreement.tipoParticipacion)
+        assertEquals("60.0000", agreement.porcentajeCliente)
+        assertEquals(true, agreement.activo)
+        assertEquals("10.0000", liquidation.gramosRecuperados)
+        assertEquals("6.0000", liquidation.gramosCliente)
     }
 }

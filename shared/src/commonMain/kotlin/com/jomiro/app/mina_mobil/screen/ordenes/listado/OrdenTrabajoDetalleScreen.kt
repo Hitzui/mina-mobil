@@ -8,12 +8,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -24,14 +23,10 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,10 +34,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jomiro.app.mina_mobil.data.ordenes.AcuerdoOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.CostoOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.DetalleOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.IngresoOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.LiquidacionOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.ProcesoOrdenTrabajo
-import com.jomiro.app.mina_mobil.data.ordenes.CostoOrdenTrabajo
-import com.jomiro.app.mina_mobil.data.ordenes.IngresoOrdenTrabajo
 import com.composables.ui.components.BottomSheet
 import com.composables.ui.components.BottomSheetDetent
 import com.composables.ui.components.rememberBottomSheetState
@@ -53,15 +51,23 @@ private val DetailInk = Color(0xFF172C3D)
 private val DetailTeal = Color(0xFF087E83)
 private val DetailMuted = Color(0xFF71808B)
 
+enum class OrdenDetalleSeccion(val titulo: String, val icono: String) {
+    COSTOS("Costos de la orden", "¤"),
+    INGRESOS("Ingresos de la orden", "↗"),
+    ACUERDOS("Acuerdos de participación", "▤"),
+    LIQUIDACIONES("Liquidaciones de oro", "◈"),
+}
+
 @Composable
 fun OrdenTrabajoDetalleScreen(
     ordenId: Long,
+    seccion: OrdenDetalleSeccion? = null,
+    onSelectSection: (OrdenDetalleSeccion) -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: OrdenTrabajoDetalleViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val costsSheetState = rememberBottomSheetState()
-    var showingIncomes by remember { mutableStateOf(false) }
     LaunchedEffect(ordenId) { viewModel.cargar(ordenId) }
 
     when {
@@ -83,118 +89,109 @@ fun OrdenTrabajoDetalleScreen(
         state.detalle != null -> {
             val detail = state.detalle!!
             val order = detail.orden
-            val processes = detail.procesos
-            val orderLevelCosts = detail.costos.filter { it.proceso.isNullOrBlank() }
-            Column(
-                modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    shape = RoundedCornerShape(18.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                            Column(Modifier.weight(1f).padding(end = 10.dp)) {
-                                Text("ORDEN DE TRABAJO", color = DetailMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
-                                Text(order.codigo, color = DetailInk, fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (seccion == null) {
+                OrderOverview(
+                    modifier = modifier,
+                    detalle = detail,
+                    onOpenSections = { costsSheetState.targetDetent = BottomSheetDetent.FullyExpanded },
+                )
+                ComposablesTheme {
+                    BottomSheet(
+                        state = costsSheetState,
+                        onDismissRequest = { costsSheetState.targetDetent = BottomSheetDetent.Hidden },
+                        backgroundColor = Color.White,
+                        contentColor = DetailInk,
+                        toolbar = {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text("Más información de la orden", color = DetailInk, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                Text(order.codigo, color = DetailMuted, fontSize = 13.sp)
                             }
-                            DetailStatusBadge(order)
-                        }
-                        Spacer(Modifier.height(18.dp))
-                        DetailField("Cliente", order.cliente ?: "Sin cliente")
-                        DetailField("Fecha", formatDetailDate(order.fecha))
-                        DetailField("Peso mineral", order.pesoMineral?.let { "$it ${order.unidadPeso.orEmpty()}".trim() } ?: "Sin registrar")
-                        DetailField("Descripción", order.descripcion?.takeIf(String::isNotBlank) ?: "Sin descripción")
-                        Button(
-                            onClick = {
-                                showingIncomes = false
-                                costsSheetState.targetDetent = BottomSheetDetent.FullyExpanded
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
-                            shape = RoundedCornerShape(12.dp),
-                        ) {
-                            Text("▤  Ver costos e ingresos de la orden")
-                        }
-                    }
-                }
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    shape = RoundedCornerShape(18.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                        Text("Avance de la orden", color = DetailInk, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            if (processes.isEmpty()) "No hay procesos disponibles para mostrar."
-                            else "${processes.size} ${if (processes.size == 1) "proceso asociado" else "procesos asociados"}",
-                            color = DetailMuted,
-                            fontSize = 13.sp,
-                            modifier = Modifier.padding(top = 3.dp, bottom = 12.dp),
-                        )
-                        if (processes.isEmpty()) {
-                            Text("Los procesos pueden no estar registrados o tu usuario no tiene permiso para verlos.", color = DetailMuted, fontSize = 13.sp)
-                        } else {
-                            processes.forEachIndexed { index, process ->
-                                ProcessCard(process)
-                                if (index < processes.lastIndex) Spacer(Modifier.height(9.dp))
+                        },
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                            OrdenDetalleSeccion.entries.forEach { item ->
+                                val count = when (item) {
+                                    OrdenDetalleSeccion.COSTOS -> detail.costos.count { it.proceso.isNullOrBlank() }
+                                    OrdenDetalleSeccion.INGRESOS -> detail.ingresos.size
+                                    OrdenDetalleSeccion.ACUERDOS -> detail.acuerdos.size
+                                    OrdenDetalleSeccion.LIQUIDACIONES -> detail.liquidaciones.size
+                                }
+                                BottomSheetMenuButton(item, count) {
+                                    costsSheetState.targetDetent = BottomSheetDetent.Hidden
+                                    onSelectSection(item)
+                                }
                             }
                         }
                     }
                 }
+            } else {
+                OrderSectionContent(modifier, detail, seccion)
             }
-            ComposablesTheme {
-                BottomSheet(
-                    state = costsSheetState,
-                    onDismissRequest = { costsSheetState.targetDetent = BottomSheetDetent.Hidden },
-                    backgroundColor = Color.White,
-                    contentColor = DetailInk,
-                    toolbar = {
-                        Column(Modifier.fillMaxWidth()) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("Movimientos de la orden", color = DetailInk, fontSize = 19.sp, fontWeight = FontWeight.Bold)
-                                    Text(order.codigo, color = DetailMuted, fontSize = 13.sp)
-                                }
-                                TextButton(onClick = { costsSheetState.targetDetent = BottomSheetDetent.Hidden }) {
-                                    Text("Cerrar", color = DetailTeal)
-                                }
-                            }
-                            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                CostSheetTab(Modifier.weight(1f), "Costos (${orderLevelCosts.size})", selected = !showingIncomes) { showingIncomes = false }
-                                CostSheetTab(Modifier.weight(1f), "Ingresos (${detail.ingresos.size})", selected = showingIncomes) { showingIncomes = true }
-                            }
-                        }
-                    },
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
-                ) {
-                    if (showingIncomes) {
-                        if (detail.ingresos.isEmpty()) {
-                            EmptyMoneyEntries("No hay ingresos registrados para esta orden.")
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
-                                verticalArrangement = Arrangement.spacedBy(9.dp),
-                            ) {
-                                items(detail.ingresos, key = IngresoOrdenTrabajo::id) { entry -> IncomeEntryCard(entry) }
-                            }
-                        }
-                    } else {
-                        if (orderLevelCosts.isEmpty()) {
-                            EmptyMoneyEntries("No hay costos propios registrados para esta orden.")
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
-                                verticalArrangement = Arrangement.spacedBy(9.dp),
-                            ) {
-                                items(orderLevelCosts, key = CostoOrdenTrabajo::id) { entry -> CostEntryCard(entry) }
-                            }
-                        }
+        }
+    }
+}
+
+@Composable
+private fun OrderOverview(
+    modifier: Modifier,
+    detalle: DetalleOrdenTrabajo,
+    onOpenSections: () -> Unit,
+) {
+    val order = detalle.orden
+    Column(
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(18.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(Modifier.weight(1f).padding(end = 10.dp)) {
+                        Text("ORDEN DE TRABAJO", color = DetailMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
+                        Text(order.codigo, color = DetailInk, fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    DetailStatusBadge(order)
+                }
+                Spacer(Modifier.height(18.dp))
+                DetailField("Cliente", order.cliente ?: "Sin cliente")
+                DetailField("Fecha", formatDetailDate(order.fecha))
+                DetailField("Peso mineral", order.pesoMineral?.let { "$it ${order.unidadPeso.orEmpty()}".trim() } ?: "Sin registrar")
+                DetailField("Descripción", order.descripcion?.takeIf(String::isNotBlank) ?: "Sin descripción")
+                Button(
+                    onClick = onOpenSections,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
+                    shape = RoundedCornerShape(12.dp),
+                ) { Text("Ver costos, ingresos, acuerdos y liquidaciones") }
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            shape = RoundedCornerShape(18.dp),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(18.dp)) {
+                Text("Procesos", color = DetailInk, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (detalle.procesos.isEmpty()) "No hay procesos disponibles para mostrar."
+                    else "${detalle.procesos.size} ${if (detalle.procesos.size == 1) "proceso asociado" else "procesos asociados"}",
+                    color = DetailMuted,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(top = 3.dp, bottom = 12.dp),
+                )
+                if (detalle.procesos.isEmpty()) {
+                    Text("Los procesos pueden no estar registrados o tu usuario no tiene permiso para verlos.", color = DetailMuted, fontSize = 13.sp)
+                } else {
+                    detalle.procesos.forEachIndexed { index, process ->
+                        ProcessCard(process)
+                        if (index < detalle.procesos.lastIndex) Spacer(Modifier.height(9.dp))
                     }
                 }
             }
@@ -203,14 +200,61 @@ fun OrdenTrabajoDetalleScreen(
 }
 
 @Composable
-private fun CostSheetTab(modifier: Modifier, label: String, selected: Boolean, onClick: () -> Unit) {
+private fun BottomSheetMenuButton(section: OrdenDetalleSeccion, count: Int, onClick: () -> Unit) {
     Surface(
-        modifier = modifier.clickable(onClick = onClick),
-        shape = RoundedCornerShape(11.dp),
-        color = if (selected) DetailTeal else Color(0xFFF1F5F6),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFFF4F7F8),
     ) {
-        Box(Modifier.padding(horizontal = 8.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-            Text(label, color = if (selected) Color.White else DetailMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = RoundedCornerShape(11.dp), color = DetailTeal.copy(alpha = 0.1f)) {
+                Box(Modifier.padding(horizontal = 12.dp, vertical = 9.dp), contentAlignment = Alignment.Center) {
+                    Text(section.icono, color = DetailTeal, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(section.titulo, color = DetailInk, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                Text("$count ${if (count == 1) "registro" else "registros"}", color = DetailMuted, fontSize = 12.sp)
+            }
+            Text("›", color = DetailTeal, fontSize = 25.sp)
+        }
+    }
+}
+
+@Composable
+private fun OrderSectionContent(
+    modifier: Modifier,
+    detail: DetalleOrdenTrabajo,
+    section: OrdenDetalleSeccion,
+) {
+    Column(modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(detail.orden.codigo, color = DetailMuted, fontSize = 13.sp)
+        when (section) {
+            OrdenDetalleSeccion.COSTOS -> {
+                val costs = detail.costos.filter { it.proceso.isNullOrBlank() }
+                if (costs.isEmpty()) EmptyMoneyEntries("No hay costos generales registrados para esta orden.")
+                else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    items(costs, key = CostoOrdenTrabajo::id) { CostEntryCard(it) }
+                }
+            }
+            OrdenDetalleSeccion.INGRESOS -> {
+                if (detail.ingresos.isEmpty()) EmptyMoneyEntries("No hay ingresos registrados para esta orden.")
+                else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    items(detail.ingresos, key = IngresoOrdenTrabajo::id) { IncomeEntryCard(it) }
+                }
+            }
+            OrdenDetalleSeccion.ACUERDOS -> {
+                if (detail.acuerdos.isEmpty()) EmptyMoneyEntries("No hay acuerdos de participación para esta orden.")
+                else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    items(detail.acuerdos, key = AcuerdoOrdenTrabajo::id) { AgreementEntryCard(it) }
+                }
+            }
+            OrdenDetalleSeccion.LIQUIDACIONES -> {
+                if (detail.liquidaciones.isEmpty()) EmptyMoneyEntries("No hay liquidaciones registradas para esta orden.")
+                else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    items(detail.liquidaciones, key = LiquidacionOrdenTrabajo::id) { LiquidationEntryCard(it) }
+                }
+            }
         }
     }
 }
@@ -251,6 +295,70 @@ private fun IncomeEntryCard(entry: IngresoOrdenTrabajo) {
         }
         entry.descripcion?.takeIf(String::isNotBlank)?.let {
             Text(it, color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun AgreementEntryCard(entry: AcuerdoOrdenTrabajo) {
+    MoneyEntrySurface {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                Text(entry.tipoParticipacion ?: "Acuerdo", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(if (entry.modalidad == "tarifa") "Tarifa de servicio" else "Participación", color = DetailMuted, fontSize = 12.sp)
+            }
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = if (entry.activo) Color(0xFFE5F4F0) else Color(0xFFF0F2F4),
+            ) {
+                Text(
+                    if (entry.activo) "Activo" else "Inactivo",
+                    color = if (entry.activo) Color(0xFF267A5B) else DetailMuted,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                )
+            }
+        }
+        if (entry.modalidad == "tarifa") {
+            Text(
+                "Tarifa: ${listOfNotNull(entry.moneda, entry.tarifaServicio).joinToString(" ").ifBlank { "Sin monto" }}",
+                color = DetailInk,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        } else {
+            Text(
+                "Cliente: ${entry.porcentajeCliente ?: "—"}%  ·  Empresa: ${entry.porcentajeEmpresa ?: "—"}%",
+                color = DetailInk,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        entry.observaciones?.takeIf(String::isNotBlank)?.let {
+            Text(it, color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 7.dp))
+        }
+    }
+}
+
+@Composable
+private fun LiquidationEntryCard(entry: LiquidacionOrdenTrabajo) {
+    MoneyEntrySurface {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                Text("Liquidación de oro", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(formatDetailDate(entry.fecha), color = DetailMuted, fontSize = 12.sp)
+            }
+            Text("${entry.gramosRecuperados ?: "—"} g", color = DetailTeal, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+        }
+        Text(
+            "Cliente: ${entry.gramosCliente ?: "—"} g (${entry.porcentajeCliente ?: "—"}%)  ·  " +
+                "Empresa: ${entry.gramosEmpresa ?: "—"} g (${entry.porcentajeEmpresa ?: "—"}%)",
+            color = DetailInk,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        entry.observaciones?.takeIf(String::isNotBlank)?.let {
+            Text(it, color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 7.dp))
         }
     }
 }

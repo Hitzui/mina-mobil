@@ -202,6 +202,31 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
             totalNio = income.totalNio?.contentOrNull,
         )
     },
+    acuerdos = agreements.map { agreement ->
+        AcuerdoOrdenTrabajo(
+            id = agreement.id,
+            tipoParticipacion = agreement.participationType,
+            modalidad = agreement.modality,
+            porcentajeCliente = agreement.clientPercentage?.contentOrNull,
+            porcentajeEmpresa = agreement.companyPercentage?.contentOrNull,
+            tarifaServicio = agreement.serviceFee?.contentOrNull,
+            moneda = agreement.currency,
+            observaciones = agreement.observations,
+            activo = agreement.active,
+        )
+    },
+    liquidaciones = liquidations.map { liquidation ->
+        LiquidacionOrdenTrabajo(
+            id = liquidation.id,
+            fecha = liquidation.date,
+            gramosRecuperados = liquidation.recoveredGrams?.contentOrNull,
+            gramosCliente = liquidation.clientGrams?.contentOrNull,
+            gramosEmpresa = liquidation.companyGrams?.contentOrNull,
+            porcentajeCliente = liquidation.clientPercentage?.contentOrNull,
+            porcentajeEmpresa = liquidation.companyPercentage?.contentOrNull,
+            observaciones = liquidation.observations,
+        )
+    },
 )
 
 @Serializable
@@ -227,6 +252,33 @@ internal data class OrdenTrabajoDetalleDto(
     val processes: List<ProcesoOrdenDto> = emptyList(),
     val costs: List<CostoOrdenDto> = emptyList(),
     val incomes: List<IngresoOrdenDto> = emptyList(),
+    val agreements: List<AcuerdoOrdenDto> = emptyList(),
+    val liquidations: List<LiquidacionOrdenDto> = emptyList(),
+)
+
+@Serializable
+internal data class AcuerdoOrdenDto(
+    val id: Long,
+    @SerialName("participation_type") val participationType: String? = null,
+    val modality: String,
+    @SerialName("client_percentage") val clientPercentage: JsonPrimitive? = null,
+    @SerialName("company_percentage") val companyPercentage: JsonPrimitive? = null,
+    @SerialName("service_fee") val serviceFee: JsonPrimitive? = null,
+    val currency: String? = null,
+    val observations: String? = null,
+    val active: Boolean = false,
+)
+
+@Serializable
+internal data class LiquidacionOrdenDto(
+    val id: Long,
+    val date: String? = null,
+    @SerialName("recovered_grams") val recoveredGrams: JsonPrimitive? = null,
+    @SerialName("client_grams") val clientGrams: JsonPrimitive? = null,
+    @SerialName("company_grams") val companyGrams: JsonPrimitive? = null,
+    @SerialName("client_percentage") val clientPercentage: JsonPrimitive? = null,
+    @SerialName("company_percentage") val companyPercentage: JsonPrimitive? = null,
+    val observations: String? = null,
 )
 
 @Serializable
