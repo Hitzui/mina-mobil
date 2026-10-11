@@ -3,6 +3,7 @@ package com.jomiro.app.mina_mobil
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
+import androidx.compose.ui.res.painterResource
 import com.jomiro.app.mina_mobil.db.MinaDatabase
 import com.jomiro.app.mina_mobil.di.startAppKoin
 import com.jomiro.app.mina_mobil.network.createApiClient
@@ -25,6 +26,7 @@ fun main() = application {
     Window(
         onCloseRequest = ::exitApplication,
         title = "MINA Móvil",
+        icon = painterResource("icon.png"),
     ) {
         App()
     }

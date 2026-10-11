@@ -8,9 +8,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -20,10 +24,14 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,6 +41,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.ProcesoOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.CostoOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.IngresoOrdenTrabajo
+import com.composables.ui.components.BottomSheet
+import com.composables.ui.components.BottomSheetDetent
+import com.composables.ui.components.rememberBottomSheetState
+import com.composables.ui.theme.ComposablesTheme
 import org.koin.compose.viewmodel.koinViewModel
 
 private val DetailInk = Color(0xFF172C3D)
@@ -46,6 +60,8 @@ fun OrdenTrabajoDetalleScreen(
     viewModel: OrdenTrabajoDetalleViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    val costsSheetState = rememberBottomSheetState()
+    var showingIncomes by remember { mutableStateOf(false) }
     LaunchedEffect(ordenId) { viewModel.cargar(ordenId) }
 
     when {
@@ -65,8 +81,10 @@ fun OrdenTrabajoDetalleScreen(
             ) { Text("Reintentar") }
         }
         state.detalle != null -> {
-            val order = state.detalle!!.orden
-            val processes = state.detalle!!.procesos
+            val detail = state.detalle!!
+            val order = detail.orden
+            val processes = detail.procesos
+            val orderLevelCosts = detail.costos.filter { it.proceso.isNullOrBlank() }
             Column(
                 modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -90,6 +108,17 @@ fun OrdenTrabajoDetalleScreen(
                         DetailField("Fecha", formatDetailDate(order.fecha))
                         DetailField("Peso mineral", order.pesoMineral?.let { "$it ${order.unidadPeso.orEmpty()}".trim() } ?: "Sin registrar")
                         DetailField("Descripción", order.descripcion?.takeIf(String::isNotBlank) ?: "Sin descripción")
+                        Button(
+                            onClick = {
+                                showingIncomes = false
+                                costsSheetState.targetDetent = BottomSheetDetent.FullyExpanded
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Text("▤  Ver costos e ingresos de la orden")
+                        }
                     }
                 }
 
@@ -119,7 +148,130 @@ fun OrdenTrabajoDetalleScreen(
                     }
                 }
             }
+            ComposablesTheme {
+                BottomSheet(
+                    state = costsSheetState,
+                    onDismissRequest = { costsSheetState.targetDetent = BottomSheetDetent.Hidden },
+                    backgroundColor = Color.White,
+                    contentColor = DetailInk,
+                    toolbar = {
+                        Column(Modifier.fillMaxWidth()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Movimientos de la orden", color = DetailInk, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                    Text(order.codigo, color = DetailMuted, fontSize = 13.sp)
+                                }
+                                TextButton(onClick = { costsSheetState.targetDetent = BottomSheetDetent.Hidden }) {
+                                    Text("Cerrar", color = DetailTeal)
+                                }
+                            }
+                            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                CostSheetTab(Modifier.weight(1f), "Costos (${orderLevelCosts.size})", selected = !showingIncomes) { showingIncomes = false }
+                                CostSheetTab(Modifier.weight(1f), "Ingresos (${detail.ingresos.size})", selected = showingIncomes) { showingIncomes = true }
+                            }
+                        }
+                    },
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
+                ) {
+                    if (showingIncomes) {
+                        if (detail.ingresos.isEmpty()) {
+                            EmptyMoneyEntries("No hay ingresos registrados para esta orden.")
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
+                                verticalArrangement = Arrangement.spacedBy(9.dp),
+                            ) {
+                                items(detail.ingresos, key = IngresoOrdenTrabajo::id) { entry -> IncomeEntryCard(entry) }
+                            }
+                        }
+                    } else {
+                        if (orderLevelCosts.isEmpty()) {
+                            EmptyMoneyEntries("No hay costos propios registrados para esta orden.")
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 460.dp),
+                                verticalArrangement = Arrangement.spacedBy(9.dp),
+                            ) {
+                                items(orderLevelCosts, key = CostoOrdenTrabajo::id) { entry -> CostEntryCard(entry) }
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun CostSheetTab(modifier: Modifier, label: String, selected: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = modifier.clickable(onClick = onClick),
+        shape = RoundedCornerShape(11.dp),
+        color = if (selected) DetailTeal else Color(0xFFF1F5F6),
+    ) {
+        Box(Modifier.padding(horizontal = 8.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+            Text(label, color = if (selected) Color.White else DetailMuted, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun EmptyMoneyEntries(message: String) {
+    Box(Modifier.fillMaxWidth().height(140.dp), contentAlignment = Alignment.Center) {
+        Text(message, color = DetailMuted, fontSize = 14.sp)
+    }
+}
+
+@Composable
+private fun CostEntryCard(entry: CostoOrdenTrabajo) {
+    MoneyEntrySurface {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                Text(entry.categoria ?: "Costo", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(formatDetailDate(entry.fecha), color = DetailMuted, fontSize = 12.sp)
+            }
+            MoneyAmounts(entry.total, entry.moneda, entry.totalNio)
+        }
+        entry.descripcion?.takeIf(String::isNotBlank)?.let {
+            Text(it, color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+        entry.cantidad?.let { Text("Cantidad: $it", color = DetailMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp)) }
+    }
+}
+
+@Composable
+private fun IncomeEntryCard(entry: IngresoOrdenTrabajo) {
+    MoneyEntrySurface {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                Text(entry.tipo ?: "Ingreso", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(formatDetailDate(entry.fecha), color = DetailMuted, fontSize = 12.sp)
+            }
+            MoneyAmounts(entry.total, entry.moneda, entry.totalNio)
+        }
+        entry.descripcion?.takeIf(String::isNotBlank)?.let {
+            Text(it, color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun MoneyEntrySurface(content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit) {
+    Surface(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), color = Color(0xFFF4F7F8)) {
+        Column(Modifier.padding(14.dp), content = content)
+    }
+}
+
+@Composable
+private fun MoneyAmounts(total: String?, currency: String?, totalNio: String?) {
+    Column(horizontalAlignment = Alignment.End) {
+        Text(
+            listOfNotNull(currency, total).joinToString(" ").ifBlank { "Sin monto" },
+            color = DetailInk,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        totalNio?.let { Text("C$ $it", color = DetailTeal, fontSize = 12.sp, fontWeight = FontWeight.Medium) }
     }
 }
 

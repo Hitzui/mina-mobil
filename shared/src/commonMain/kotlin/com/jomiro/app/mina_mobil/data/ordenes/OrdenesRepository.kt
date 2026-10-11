@@ -178,6 +178,30 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
             observaciones = process.observations,
         )
     },
+    costos = costs.map { cost ->
+        CostoOrdenTrabajo(
+            id = cost.id,
+            fecha = cost.date,
+            proceso = cost.process,
+            categoria = cost.category,
+            descripcion = cost.description,
+            cantidad = cost.quantity?.contentOrNull,
+            moneda = cost.currency,
+            total = cost.total?.contentOrNull,
+            totalNio = cost.totalNio?.contentOrNull,
+        )
+    },
+    ingresos = incomes.map { income ->
+        IngresoOrdenTrabajo(
+            id = income.id,
+            fecha = income.date,
+            tipo = income.type,
+            descripcion = income.description,
+            moneda = income.currency,
+            total = income.total?.contentOrNull,
+            totalNio = income.totalNio?.contentOrNull,
+        )
+    },
 )
 
 @Serializable
@@ -201,6 +225,32 @@ internal data class OrdenTrabajoDetalleDto(
     val status: String,
     @SerialName("status_code") val statusCode: Int,
     val processes: List<ProcesoOrdenDto> = emptyList(),
+    val costs: List<CostoOrdenDto> = emptyList(),
+    val incomes: List<IngresoOrdenDto> = emptyList(),
+)
+
+@Serializable
+internal data class CostoOrdenDto(
+    val id: Long,
+    val date: String? = null,
+    val process: String? = null,
+    val category: String? = null,
+    val description: String? = null,
+    val quantity: JsonPrimitive? = null,
+    val currency: String? = null,
+    val total: JsonPrimitive? = null,
+    @SerialName("total_nio") val totalNio: JsonPrimitive? = null,
+)
+
+@Serializable
+internal data class IngresoOrdenDto(
+    val id: Long,
+    val date: String? = null,
+    val type: String? = null,
+    val description: String? = null,
+    val currency: String? = null,
+    val total: JsonPrimitive? = null,
+    @SerialName("total_nio") val totalNio: JsonPrimitive? = null,
 )
 
 @Serializable

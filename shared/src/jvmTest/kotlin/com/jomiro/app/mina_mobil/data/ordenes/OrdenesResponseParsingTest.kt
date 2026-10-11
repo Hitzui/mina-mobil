@@ -79,6 +79,30 @@ class OrdenesResponseParsingTest {
                     "output_weight": 10.0,
                     "observations": "En espera de revisión"
                   }
+                ],
+                "costs": [
+                  {
+                    "id": 19,
+                    "date": "2026-10-11",
+                    "process": null,
+                    "category": "Transporte",
+                    "description": "Traslado de mineral",
+                    "quantity": 2,
+                    "currency": "USD",
+                    "total": "35.00",
+                    "total_nio": "1281.50"
+                  }
+                ],
+                "incomes": [
+                  {
+                    "id": 24,
+                    "date": "2026-10-11",
+                    "type": "Venta de mineral",
+                    "description": "Entrega parcial",
+                    "currency": "NIO",
+                    "total": 2500,
+                    "total_nio": "2500.00"
+                  }
                 ]
               }
             }
@@ -86,6 +110,8 @@ class OrdenesResponseParsingTest {
 
         val detail = parseOrderDetail(response)
         val process = detail.procesos.single()
+        val cost = detail.costos.single()
+        val income = detail.ingresos.single()
 
         assertEquals(42L, detail.orden.id)
         assertEquals("OT-0042", detail.orden.codigo)
@@ -95,5 +121,10 @@ class OrdenesResponseParsingTest {
         assertEquals(12.5, process.pesoEntrada)
         assertEquals(10.0, process.pesoSalida)
         assertEquals("En espera de revisión", process.observaciones)
+        assertEquals("Transporte", cost.categoria)
+        assertEquals("35.00", cost.total)
+        assertEquals("1281.50", cost.totalNio)
+        assertEquals("Venta de mineral", income.tipo)
+        assertEquals("2500", income.total)
     }
 }

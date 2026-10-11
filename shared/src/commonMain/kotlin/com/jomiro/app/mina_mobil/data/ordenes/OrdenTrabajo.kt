@@ -22,6 +22,8 @@ data class PaginaOrdenes(
 data class DetalleOrdenTrabajo(
     val orden: OrdenTrabajo,
     val procesos: List<ProcesoOrdenTrabajo>,
+    val costos: List<CostoOrdenTrabajo> = emptyList(),
+    val ingresos: List<IngresoOrdenTrabajo> = emptyList(),
 )
 
 data class ProcesoOrdenTrabajo(
@@ -34,4 +36,26 @@ data class ProcesoOrdenTrabajo(
     val pesoEntrada: Double?,
     val pesoSalida: Double?,
     val observaciones: String?,
+)
+
+data class CostoOrdenTrabajo(
+    val id: Long,
+    val fecha: String?,
+    val proceso: String?,
+    val categoria: String?,
+    val descripcion: String?,
+    val cantidad: String?,
+    val moneda: String?,
+    val total: String?,
+    val totalNio: String?,
+)
+
+data class IngresoOrdenTrabajo(
+    val id: Long,
+    val fecha: String?,
+    val tipo: String?,
+    val descripcion: String?,
+    val moneda: String?,
+    val total: String?,
+    val totalNio: String?,
 )

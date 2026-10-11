@@ -27,6 +27,15 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "com.jomiro.app.mina_mobil"
             packageVersion = "1.0.0"
+            windows {
+                iconFile.set(project.file("src/main/resources/mina-mobil.ico"))
+            }
+            macOS {
+                iconFile.set(project.file("src/main/resources/mina-mobil.icns"))
+            }
+            linux {
+                iconFile.set(project.file("src/main/resources/icon.png"))
+            }
         }
     }
 }
