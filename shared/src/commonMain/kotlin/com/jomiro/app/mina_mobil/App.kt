@@ -219,19 +219,22 @@ private fun SignedInScreen(userId: Long, name: String, email: String, cashRegist
             ModalDrawerSheet(drawerContainerColor = Color.White) {
                 DrawerHeader(name = name, email = email, cashRegister = cashRegister)
                 HorizontalDivider(color = Line, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
-                AppSection.entries.forEach { section ->
-                    NavigationDrawerItem(
-                        label = { Text(section.title) },
-                        selected = selectedSection == section,
-                        onClick = {
-                            selectedSection = section
-                            coroutineScope.launch { drawerState.close() }
-                        },
-                        icon = { Text(section.icon, color = if (selectedSection == section) Teal else Muted, fontSize = 20.sp) },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp),
-                    )
+                Column(
+                    modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
+                ) {
+                    AppSection.entries.forEach { section ->
+                        NavigationDrawerItem(
+                            label = { Text(section.title) },
+                            selected = selectedSection == section,
+                            onClick = {
+                                selectedSection = section
+                                coroutineScope.launch { drawerState.close() }
+                            },
+                            icon = { Text(section.icon, color = if (selectedSection == section) Teal else Muted, fontSize = 20.sp) },
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp),
+                        )
+                    }
                 }
-                Spacer(Modifier.weight(1f))
                 HorizontalDivider(color = Line, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
                 NavigationDrawerItem(
                     label = { Text("Cerrar sesión") },
