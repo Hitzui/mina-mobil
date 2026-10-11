@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jomiro.app.mina_mobil.login.LoginViewModel
 import com.jomiro.app.mina_mobil.screen.clientes.listado.ClientesListadoScreen
+import com.jomiro.app.mina_mobil.screen.empleados.listado.EmpleadosScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenTrabajoDetalleScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenDetalleSeccion
@@ -83,6 +84,9 @@ fun App() {
                     cashRegister = session.cashRegisterName,
                     canCreateOrders = "ordenes_trabajo.create" in session.permissions,
                     canCreateProcesses = "procesos_orden.create" in session.permissions,
+                    canViewEmployees = "empleados.view" in session.permissions,
+                    canViewEmployeeWork = "trabajos_empleado.view" in session.permissions,
+                    canCreateEmployeeWork = "trabajos_empleado.create" in session.permissions,
                     onLogout = viewModel::logout,
                 )
             } else {
@@ -208,6 +212,7 @@ private enum class AppSection(val title: String, val icon: String) {
     HOME("Inicio", "⌂"),
     CLIENTS("Clientes", "♙"),
     WORK_ORDERS("Órdenes de trabajo", "▤"),
+    EMPLOYEES("Empleados", "♙"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -219,6 +224,9 @@ private fun SignedInScreen(
     cashRegister: String,
     canCreateOrders: Boolean,
     canCreateProcesses: Boolean,
+    canViewEmployees: Boolean,
+    canViewEmployeeWork: Boolean,
+    canCreateEmployeeWork: Boolean,
     onLogout: () -> Unit,
 ) {
     var selectedSection by remember { mutableStateOf(AppSection.HOME) }
@@ -236,7 +244,7 @@ private fun SignedInScreen(
                 Column(
                     modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
                 ) {
-                    AppSection.entries.forEach { section ->
+                    AppSection.entries.filter { it != AppSection.EMPLOYEES || canViewEmployees }.forEach { section ->
                         NavigationDrawerItem(
                             label = { Text(section.title) },
                             selected = selectedSection == section,
@@ -317,6 +325,10 @@ private fun SignedInScreen(
                     userId = userId,
                     modifier = Modifier.padding(contentPadding),
                 )
+                AppSection.EMPLOYEES -> EmpleadosScreen(
+                    userId = userId,
+                    modifier = Modifier.padding(contentPadding),
+                )
                 AppSection.WORK_ORDERS -> {
                     if (selectedOrderId == null) {
                         OrdenesTrabajoScreen(
@@ -329,6 +341,8 @@ private fun SignedInScreen(
                         OrdenTrabajoDetalleScreen(
                             ordenId = selectedOrderId!!,
                             canCreateProcess = canCreateProcesses,
+                            canViewEmployeeWork = canViewEmployeeWork,
+                            canCreateEmployeeWork = canCreateEmployeeWork,
                             seccion = selectedOrderSection,
                             onSelectSection = { selectedOrderSection = it },
                             modifier = Modifier.padding(contentPadding),

@@ -515,7 +515,7 @@ private fun ClientSelectionDialog(
 }
 
 @Composable
-private fun DateSelectionDialog(initialDate: String?, onSelect: (LocalDate) -> Unit, onDismiss: () -> Unit) {
+internal fun DateSelectionDialog(initialDate: String?, onSelect: (LocalDate) -> Unit, onDismiss: () -> Unit) {
     val today = kotlin.time.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date
     var selectedDate by remember { mutableStateOf(initialDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: today) }
     var displayedMonth by remember { mutableStateOf(LocalDate(selectedDate.year, selectedDate.month, 1)) }
@@ -575,7 +575,7 @@ private fun DateSelectionDialog(initialDate: String?, onSelect: (LocalDate) -> U
     }
 }
 
-private fun String.toDisplayDate(): String = runCatching {
+internal fun String.toDisplayDate(): String = runCatching {
     val date = LocalDate.parse(this)
     "${date.day.toString().padStart(2, '0')}/${(date.month.ordinal + 1).toString().padStart(2, '0')}/${date.year}"
 }.getOrElse { this }

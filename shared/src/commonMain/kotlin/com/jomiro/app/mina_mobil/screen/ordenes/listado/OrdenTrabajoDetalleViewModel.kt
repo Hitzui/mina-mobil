@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jomiro.app.mina_mobil.data.ordenes.DetalleOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.EtapaOpcionProceso
+import com.jomiro.app.mina_mobil.data.ordenes.OpcionesTrabajoEmpleado
+import com.jomiro.app.mina_mobil.data.ordenes.TarifaTrabajoEmpleado
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenesRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,13 @@ data class OrdenTrabajoDetalleUiState(
     val creandoProceso: Boolean = false,
     val procesoAgregado: Boolean = false,
     val errorProceso: String? = null,
+    val opcionesTrabajo: OpcionesTrabajoEmpleado? = null,
+    val cargandoOpcionesTrabajo: Boolean = false,
+    val tarifaTrabajo: TarifaTrabajoEmpleado? = null,
+    val cargandoTarifaTrabajo: Boolean = false,
+    val creandoTrabajo: Boolean = false,
+    val trabajoAgregado: Boolean = false,
+    val errorTrabajo: String? = null,
 )
 
 class OrdenTrabajoDetalleViewModel(
@@ -31,6 +40,7 @@ class OrdenTrabajoDetalleViewModel(
     private val mutableState = MutableStateFlow(OrdenTrabajoDetalleUiState())
     val state: StateFlow<OrdenTrabajoDetalleUiState> = mutableState.asStateFlow()
     private var loadedOrderId: Long? = null
+    private var tarifaTrabajoVersion = 0
 
     fun cargar(id: Long, reintentar: Boolean = false) {
         val current = mutableState.value
@@ -139,5 +149,97 @@ class OrdenTrabajoDetalleViewModel(
 
     fun limpiarMensajeProceso() {
         mutableState.update { it.copy(procesoAgregado = false, errorProceso = null) }
+    }
+
+    fun cargarOpcionesTrabajo(ordenId: Long, procesoId: Long) {
+        if (mutableState.value.cargandoOpcionesTrabajo) return
+        tarifaTrabajoVersion++
+        mutableState.update {
+            it.copy(
+                opcionesTrabajo = null,
+                cargandoOpcionesTrabajo = true,
+                errorTrabajo = null,
+                trabajoAgregado = false,
+                tarifaTrabajo = null,
+            )
+        }
+        viewModelScope.launch {
+            runCatching { repository.opcionesTrabajo(ordenId, procesoId) }
+                .onSuccess { options -> mutableState.update { it.copy(opcionesTrabajo = options, cargandoOpcionesTrabajo = false) } }
+                .onFailure { error ->
+                    mutableState.update {
+                        it.copy(cargandoOpcionesTrabajo = false, errorTrabajo = error.message ?: "No se pudieron cargar las opciones del trabajo.")
+                    }
+                }
+        }
+    }
+
+    fun consultarTarifaTrabajo(ordenId: Long, procesoId: Long, empleadoId: Long?, tipoPagoId: Long?, fecha: String) {
+        val requestVersion = ++tarifaTrabajoVersion
+        if (empleadoId == null || tipoPagoId == null || fecha.isBlank()) {
+            mutableState.update { it.copy(tarifaTrabajo = null, cargandoTarifaTrabajo = false, errorTrabajo = null) }
+            return
+        }
+        mutableState.update { it.copy(cargandoTarifaTrabajo = true, tarifaTrabajo = null, errorTrabajo = null) }
+        viewModelScope.launch {
+            runCatching { repository.tarifaTrabajo(ordenId, procesoId, empleadoId, tipoPagoId, fecha) }
+                .onSuccess { rate ->
+                    if (requestVersion == tarifaTrabajoVersion) {
+                        mutableState.update { it.copy(tarifaTrabajo = rate, cargandoTarifaTrabajo = false) }
+                    }
+                }
+                .onFailure { error ->
+                    if (requestVersion == tarifaTrabajoVersion) {
+                        mutableState.update {
+                            it.copy(cargandoTarifaTrabajo = false, tarifaTrabajo = null, errorTrabajo = error.message ?: "No se pudo consultar la tarifa vigente.")
+                        }
+                    }
+                }
+        }
+    }
+
+    fun agregarTrabajo(
+        ordenId: Long,
+        procesoId: Long,
+        empleadoId: Long,
+        tipoPagoId: Long,
+        fecha: String,
+        horaInicio: String?,
+        horaFin: String?,
+        cantidad: Double,
+        unidadId: Long,
+        descripcion: String,
+        observaciones: String,
+    ) {
+        if (mutableState.value.creandoTrabajo) return
+        mutableState.update { it.copy(creandoTrabajo = true, errorTrabajo = null, trabajoAgregado = false) }
+        viewModelScope.launch {
+            runCatching {
+                repository.crearTrabajo(
+                    ordenId, procesoId, empleadoId, tipoPagoId, fecha,
+                    horaInicio, horaFin, cantidad, unidadId, descripcion, observaciones,
+                )
+            }.onSuccess {
+                val updatedDetail = runCatching { repository.detalle(ordenId) }
+                mutableState.update { current ->
+                    current.copy(
+                        detalle = updatedDetail.getOrNull() ?: current.detalle,
+                        creandoTrabajo = false,
+                        trabajoAgregado = true,
+                        errorTrabajo = updatedDetail.exceptionOrNull()?.let {
+                            "El trabajo se registró, pero no se pudo actualizar el detalle. Desliza para actualizar."
+                        },
+                    )
+                }
+            }.onFailure { error ->
+                mutableState.update {
+                    it.copy(creandoTrabajo = false, errorTrabajo = error.message ?: "No se pudo registrar el trabajo.")
+                }
+            }
+        }
+    }
+
+    fun limpiarMensajeTrabajo() {
+        mutableState.update { it.copy(trabajoAgregado = false, errorTrabajo = null, tarifaTrabajo = null) }
     }
 }

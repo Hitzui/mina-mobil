@@ -47,11 +47,17 @@ import com.jomiro.app.mina_mobil.data.ordenes.IngresoOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.LiquidacionOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.ProcesoOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.TrabajoEmpleadoOrden
+import com.jomiro.app.mina_mobil.data.ordenes.OpcionTrabajoEmpleado
+import com.jomiro.app.mina_mobil.data.ordenes.OpcionUnidadTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.TarifaTrabajoEmpleado
 import com.composables.ui.components.BottomSheet
 import com.composables.ui.components.BottomSheetDetent
 import com.composables.ui.components.AlertDialog as ComposablesAlertDialog
 import com.composables.ui.components.rememberBottomSheetState
 import com.composables.ui.theme.ComposablesTheme
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import org.koin.compose.viewmodel.koinViewModel
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
@@ -71,6 +77,8 @@ enum class OrdenDetalleSeccion(val titulo: String, val icono: String) {
 fun OrdenTrabajoDetalleScreen(
     ordenId: Long,
     canCreateProcess: Boolean = false,
+    canViewEmployeeWork: Boolean = false,
+    canCreateEmployeeWork: Boolean = false,
     seccion: OrdenDetalleSeccion? = null,
     onSelectSection: (OrdenDetalleSeccion) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -80,9 +88,13 @@ fun OrdenTrabajoDetalleScreen(
     val costsSheetState = rememberBottomSheetState()
     var mostrarConfirmacionFinalizar by remember(ordenId) { mutableStateOf(false) }
     var mostrarFormularioProceso by remember(ordenId) { mutableStateOf(false) }
+    var procesoParaTrabajo by remember(ordenId) { mutableStateOf<ProcesoOrdenTrabajo?>(null) }
     LaunchedEffect(ordenId) { viewModel.cargar(ordenId) }
     LaunchedEffect(state.procesoAgregado) {
         if (state.procesoAgregado) mostrarFormularioProceso = false
+    }
+    LaunchedEffect(state.trabajoAgregado) {
+        if (state.trabajoAgregado) procesoParaTrabajo = null
     }
 
     when {
@@ -109,10 +121,16 @@ fun OrdenTrabajoDetalleScreen(
                     modifier = modifier,
                     detalle = detail,
                     puedeAgregarProceso = canCreateProcess && order.codigoEstado != 0 && order.codigoEstado != 3,
+                    puedeVerTrabajos = canViewEmployeeWork,
+                    puedeAgregarTrabajos = canCreateEmployeeWork && order.codigoEstado != 0 && order.codigoEstado != 3,
                     onOpenSections = { costsSheetState.targetDetent = BottomSheetDetent.FullyExpanded },
                     onAddProcess = {
                         viewModel.cargarEtapasProceso(ordenId)
-                        mostrarFormularioProceso = true
+                            mostrarFormularioProceso = true
+                        },
+                    onAddWork = { process ->
+                        viewModel.cargarOpcionesTrabajo(ordenId, process.id)
+                        procesoParaTrabajo = process
                     },
                 )
                 ComposablesTheme {
@@ -280,6 +298,53 @@ fun OrdenTrabajoDetalleScreen(
                         }
                     }
                 }
+                procesoParaTrabajo?.let { process ->
+                    if (!state.trabajoAgregado) {
+                        CrearTrabajoEmpleadoDialog(
+                            process = process,
+                            opciones = state.opcionesTrabajo,
+                            cargandoOpciones = state.cargandoOpcionesTrabajo,
+                            tarifa = state.tarifaTrabajo,
+                            cargandoTarifa = state.cargandoTarifaTrabajo,
+                            creando = state.creandoTrabajo,
+                            error = state.errorTrabajo,
+                            onRetryOptions = { viewModel.cargarOpcionesTrabajo(ordenId, process.id) },
+                            onQuote = { employeeId, paymentTypeId, date ->
+                                viewModel.consultarTarifaTrabajo(ordenId, process.id, employeeId, paymentTypeId, date)
+                            },
+                            onDismiss = { if (!state.creandoTrabajo) procesoParaTrabajo = null },
+                            onCreate = { employeeId, paymentTypeId, date, start, end, quantity, unitId, description, observations ->
+                                viewModel.agregarTrabajo(
+                                    ordenId, process.id, employeeId, paymentTypeId, date, start, end,
+                                    quantity, unitId, description, observations,
+                                )
+                            },
+                        )
+                    }
+                }
+                if (state.trabajoAgregado) {
+                    ComposablesTheme {
+                        ComposablesAlertDialog(
+                            visible = true,
+                            onDismissRequest = { viewModel.limpiarMensajeTrabajo() },
+                            paneTitle = "Trabajo registrado",
+                        ) {
+                            Column {
+                                Text("Trabajo registrado", color = DetailTeal, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(10.dp))
+                                Text(state.errorTrabajo ?: "El trabajo del empleado se agregó al proceso.", color = DetailInk, fontSize = 14.sp)
+                                Spacer(Modifier.height(14.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    Button(
+                                        onClick = { viewModel.limpiarMensajeTrabajo() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
+                                        shape = RoundedCornerShape(10.dp),
+                                    ) { Text("Entendido") }
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
                 OrderSectionContent(modifier, detail, seccion)
             }
@@ -292,8 +357,11 @@ private fun OrderOverview(
     modifier: Modifier,
     detalle: DetalleOrdenTrabajo,
     puedeAgregarProceso: Boolean,
+    puedeVerTrabajos: Boolean,
+    puedeAgregarTrabajos: Boolean,
     onOpenSections: () -> Unit,
     onAddProcess: () -> Unit,
+    onAddWork: (ProcesoOrdenTrabajo) -> Unit,
 ) {
     val order = detalle.orden
     Column(
@@ -352,7 +420,14 @@ private fun OrderOverview(
                     Text("Los procesos pueden no estar registrados o tu usuario no tiene permiso para verlos.", color = DetailMuted, fontSize = 13.sp)
                 } else {
                     detalle.procesos.forEachIndexed { index, process ->
-                        ProcessCard(process)
+                        val openProcess = process.estado != "Finalizado" && process.estado != "Cancelado"
+                        ProcessCard(
+                            process = process,
+                            trabajos = detalle.trabajosEmpleados.filter { it.codigoProceso == process.codigo },
+                            mostrarTrabajos = puedeVerTrabajos,
+                            puedeAgregarTrabajo = puedeAgregarTrabajos && openProcess,
+                            onAddWork = { onAddWork(process) },
+                        )
                         if (index < detalle.procesos.lastIndex) Spacer(Modifier.height(9.dp))
                     }
                 }
@@ -680,7 +755,13 @@ private fun DetailField(label: String, value: String) {
 }
 
 @Composable
-private fun ProcessCard(process: ProcesoOrdenTrabajo) {
+private fun ProcessCard(
+    process: ProcesoOrdenTrabajo,
+    trabajos: List<TrabajoEmpleadoOrden>,
+    mostrarTrabajos: Boolean,
+    puedeAgregarTrabajo: Boolean,
+    onAddWork: () -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(13.dp),
@@ -712,9 +793,261 @@ private fun ProcessCard(process: ProcesoOrdenTrabajo) {
             process.observaciones?.takeIf(String::isNotBlank)?.let {
                 Text(it, color = DetailInk, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
             }
+            if (mostrarTrabajos && trabajos.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("Trabajos de empleados", color = DetailInk, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                trabajos.forEach { work ->
+                    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                        Text("${work.empleado ?: "Empleado"} · ${work.tipoPago ?: "Trabajo"}", color = DetailInk, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            listOfNotNull(work.fecha?.let(::formatDetailDate), listOfNotNull(work.cantidad, work.unidad).joinToString(" ").takeIf(String::isNotBlank))
+                                .joinToString(" · "),
+                            color = DetailMuted,
+                            fontSize = 11.sp,
+                        )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(listOfNotNull(work.moneda, work.total).joinToString(" ").ifBlank { "—" }, color = DetailInk, fontSize = 11.sp)
+                            work.totalNio?.let { Text("C$ $it", color = DetailTeal, fontSize = 11.sp, fontWeight = FontWeight.Medium) }
+                        }
+                    }
+                }
+            }
+            if (puedeAgregarTrabajo) {
+                androidx.compose.material3.TextButton(
+                    onClick = onAddWork,
+                    modifier = Modifier.align(Alignment.End).padding(top = 3.dp),
+                ) { Text("+ Agregar trabajo", color = DetailTeal, fontWeight = FontWeight.SemiBold) }
+            }
         }
     }
 }
+
+@Composable
+private fun CrearTrabajoEmpleadoDialog(
+    process: ProcesoOrdenTrabajo,
+    opciones: com.jomiro.app.mina_mobil.data.ordenes.OpcionesTrabajoEmpleado?,
+    cargandoOpciones: Boolean,
+    tarifa: TarifaTrabajoEmpleado?,
+    cargandoTarifa: Boolean,
+    creando: Boolean,
+    error: String?,
+    onRetryOptions: () -> Unit,
+    onQuote: (Long?, Long?, String) -> Unit,
+    onDismiss: () -> Unit,
+    onCreate: (Long, Long, String, String?, String?, Double, Long, String, String) -> Unit,
+) {
+    val today = kotlin.time.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date.toString()
+    var employeeId by remember(process.id) { mutableStateOf<Long?>(null) }
+    var paymentTypeId by remember(process.id) { mutableStateOf<Long?>(null) }
+    var unitId by remember(process.id) { mutableStateOf<Long?>(null) }
+    var date by remember(process.id) { mutableStateOf(today) }
+    var startTime by remember(process.id) { mutableStateOf("") }
+    var endTime by remember(process.id) { mutableStateOf("") }
+    var quantity by remember(process.id) { mutableStateOf("1") }
+    var description by remember(process.id) { mutableStateOf("") }
+    var observations by remember(process.id) { mutableStateOf("") }
+    var openSelector by remember { mutableStateOf<String?>(null) }
+    var showDatePicker by remember(process.id) { mutableStateOf(false) }
+    LaunchedEffect(opciones) {
+        if (employeeId == null) employeeId = opciones?.empleados?.firstOrNull()?.id
+        if (paymentTypeId == null) paymentTypeId = opciones?.tiposPago?.firstOrNull()?.id
+        if (unitId == null) unitId = opciones?.unidades?.firstOrNull()?.id
+    }
+    LaunchedEffect(employeeId, paymentTypeId, date) { onQuote(employeeId, paymentTypeId, date) }
+    val quantityValue = quantity.trim().replace(',', '.').toDoubleOrNull()
+    val timeValid = (startTime.isBlank() || startTime.matches(Regex("\\d{2}:\\d{2}"))) &&
+        (endTime.isBlank() || endTime.matches(Regex("\\d{2}:\\d{2}"))) &&
+        (startTime.isBlank() || endTime.isBlank() || endTime >= startTime)
+    val selectedEmployee = opciones?.empleados?.firstOrNull { it.id == employeeId }
+    val selectedType = opciones?.tiposPago?.firstOrNull { it.id == paymentTypeId }
+    val selectedUnit = opciones?.unidades?.firstOrNull { it.id == unitId }
+    val canSubmit = selectedEmployee != null && selectedType != null && selectedUnit != null &&
+        tarifa != null && quantityValue != null && quantityValue >= 0 && timeValid && date.isNotBlank() &&
+        !cargandoOpciones && !cargandoTarifa && !creando
+    val total = tarifa?.let { if (it.metodoCalculo == "TARIFA") it.tarifa else it.tarifa * (quantityValue ?: 0.0) }
+    val totalNio = tarifa?.let { if (it.metodoCalculo == "TARIFA") it.tarifaNio else it.tarifaNio * (quantityValue ?: 0.0) }
+
+    ComposablesTheme {
+        ComposablesAlertDialog(
+            visible = true,
+            onDismissRequest = { if (!creando) onDismiss() },
+            paneTitle = "Nuevo trabajo de empleado",
+        ) {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Nuevo trabajo", color = DetailInk, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Text("Proceso ${process.codigo} · ${process.etapa.orEmpty()}", color = DetailMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp, bottom = 12.dp))
+                EmployeeWorkPickerButton("Empleado", selectedEmployee?.let { "${it.codigo.orEmpty()} · ${it.nombre}" }, !cargandoOpciones) {
+                    openSelector = "employee"
+                }
+                EmployeeWorkPickerButton("Tipo de pago", selectedType?.nombre, !cargandoOpciones) {
+                    openSelector = "payment"
+                }
+                Button(
+                    onClick = { showDatePicker = true },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(52.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
+                    shape = RoundedCornerShape(11.dp),
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column {
+                            Text("Fecha", color = DetailMuted, fontSize = 10.sp)
+                            Text(date.toDisplayDate(), color = DetailInk, fontSize = 13.sp)
+                        }
+                        Text("▦", color = DetailTeal, fontSize = 18.sp)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = startTime,
+                        onValueChange = { startTime = it },
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Hora inicio") },
+                        placeholder = { Text("HH:mm") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = endTime,
+                        onValueChange = { endTime = it },
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Hora fin") },
+                        placeholder = { Text("HH:mm") },
+                        singleLine = true,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = quantity,
+                        onValueChange = { quantity = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Cantidad") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    )
+                    EmployeeWorkPickerButton("Unidad", selectedUnit?.nombre, !cargandoOpciones, Modifier.weight(1f)) {
+                        openSelector = "unit"
+                    }
+                }
+                if (cargandoOpciones) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                        CircularProgressIndicator(Modifier.height(18.dp), color = DetailTeal, strokeWidth = 2.dp)
+                        Text("  Cargando datos del formulario…", color = DetailMuted, fontSize = 12.sp)
+                    }
+                }
+                if (cargandoTarifa) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                        CircularProgressIndicator(Modifier.height(18.dp), color = DetailTeal, strokeWidth = 2.dp)
+                        Text("  Consultando tarifa vigente…", color = DetailMuted, fontSize = 12.sp)
+                    }
+                }
+                tarifa?.let { rate ->
+                    Surface(Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(12.dp), color = Color(0xFFF1F5F6)) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Tarifa: ${rate.tarifa} ${rate.moneda}", color = DetailInk, fontSize = 13.sp)
+                            Text("Tarifa NIO: C$ ${rate.tarifaNio}", color = DetailMuted, fontSize = 12.sp)
+                            Text("Total estimado: ${total?.let(::moneyValue) ?: "—"} ${rate.moneda} · C$ ${totalNio?.let(::moneyValue) ?: "—"}", color = DetailTeal, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+                OutlinedTextField(value = description, onValueChange = { if (it.length <= 255) description = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Descripción") }, singleLine = true)
+                OutlinedTextField(value = observations, onValueChange = { observations = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Observaciones") }, minLines = 2, maxLines = 4)
+                error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
+                if (opciones != null && (opciones.empleados.isEmpty() || opciones.tiposPago.isEmpty() || opciones.unidades.isEmpty())) {
+                    Text("No hay empleados, tipos de pago o unidades activas disponibles.", color = DetailMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+                }
+                if (opciones == null && !cargandoOpciones) {
+                    TextButton(onClick = onRetryOptions, modifier = Modifier.align(Alignment.End)) { Text("Reintentar", color = DetailTeal) }
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onDismiss, enabled = !creando) { Text("Cancelar", color = DetailMuted) }
+                    Button(
+                        onClick = {
+                            onCreate(
+                                employeeId ?: return@Button,
+                                paymentTypeId ?: return@Button,
+                                date,
+                                startTime.takeIf(String::isNotBlank),
+                                endTime.takeIf(String::isNotBlank),
+                                quantityValue ?: return@Button,
+                                unitId ?: return@Button,
+                                description,
+                                observations,
+                            )
+                        },
+                        enabled = canSubmit,
+                        colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        if (creando) CircularProgressIndicator(Modifier.height(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        else Text("Guardar")
+                    }
+                }
+            }
+        }
+    }
+
+    val choices = when (openSelector) {
+        "employee" -> opciones?.empleados?.map { it.id to "${it.codigo.orEmpty()} · ${it.nombre}" }.orEmpty()
+        "payment" -> opciones?.tiposPago?.map { it.id to it.nombre }.orEmpty()
+        "unit" -> opciones?.unidades?.map { it.id to it.nombre }.orEmpty()
+        else -> emptyList()
+    }
+    if (openSelector != null) EmployeeWorkOptionsDialog(
+        title = when (openSelector) { "employee" -> "Seleccionar empleado"; "payment" -> "Tipo de pago"; else -> "Seleccionar unidad" },
+        options = choices,
+        onSelect = { id ->
+            when (openSelector) {
+                "employee" -> employeeId = id
+                "payment" -> paymentTypeId = id
+                "unit" -> unitId = id
+            }
+            openSelector = null
+        },
+        onDismiss = { openSelector = null },
+    )
+    if (showDatePicker) DateSelectionDialog(
+        initialDate = date,
+        onSelect = { date = it.toString(); showDatePicker = false },
+        onDismiss = { showDatePicker = false },
+    )
+}
+
+@Composable
+private fun EmployeeWorkPickerButton(label: String, value: String?, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.fillMaxWidth().padding(top = 8.dp).height(54.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
+        shape = RoundedCornerShape(11.dp),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(label, color = DetailMuted, fontSize = 10.sp)
+            Text(value ?: "Seleccionar", color = DetailInk, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun EmployeeWorkOptionsDialog(title: String, options: List<Pair<Long, String>>, onSelect: (Long) -> Unit, onDismiss: () -> Unit) {
+    ComposablesTheme {
+        ComposablesAlertDialog(visible = true, onDismissRequest = onDismiss, paneTitle = title) {
+            Column {
+                Text(title, color = DetailInk, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                LazyColumn(Modifier.height(280.dp).padding(top = 8.dp)) {
+                    items(options, key = { it.first }) { (id, label) ->
+                        TextButton(onClick = { onSelect(id) }, modifier = Modifier.fillMaxWidth()) {
+                            Text(label, color = DetailInk, modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                    if (options.isEmpty()) item { Text("No hay opciones disponibles.", color = DetailMuted, modifier = Modifier.padding(12.dp)) }
+                }
+                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("Cerrar", color = DetailTeal) }
+            }
+        }
+    }
+}
+
+private fun moneyValue(value: Double): String = (kotlin.math.round(value * 100) / 100).toString()
 
 @Composable
 private fun DetailStatusBadge(order: OrdenTrabajo) {

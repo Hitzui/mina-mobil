@@ -35,6 +35,21 @@ data class DetalleOrdenTrabajo(
     val ingresos: List<IngresoOrdenTrabajo> = emptyList(),
     val acuerdos: List<AcuerdoOrdenTrabajo> = emptyList(),
     val liquidaciones: List<LiquidacionOrdenTrabajo> = emptyList(),
+    val trabajosEmpleados: List<TrabajoEmpleadoOrden> = emptyList(),
+)
+
+data class TrabajoEmpleadoOrden(
+    val id: Long,
+    val codigoProceso: String?,
+    val empleado: String?,
+    val tipoPago: String?,
+    val fecha: String?,
+    val descripcion: String?,
+    val cantidad: String?,
+    val unidad: String?,
+    val moneda: String?,
+    val total: String?,
+    val totalNio: String?,
 )
 
 data class ProcesoOrdenTrabajo(

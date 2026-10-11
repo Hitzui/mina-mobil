@@ -207,6 +207,83 @@ class OrdenesRepository(
         }
     }
 
+    suspend fun opcionesTrabajo(ordenId: Long, procesoId: Long): OpcionesTrabajoEmpleado {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/employee-work-options"
+        val response = client.get(endpoint) {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar empleados, tipos de pago y unidades.")
+        return runCatching { ApiJson.instance.decodeFromString<OpcionesTrabajoResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("No se pudieron interpretar las opciones del trabajo.") }
+    }
+
+    suspend fun tarifaTrabajo(
+        ordenId: Long,
+        procesoId: Long,
+        empleadoId: Long,
+        tipoPagoId: Long,
+        fecha: String,
+    ): TarifaTrabajoEmpleado {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/employee-work-rate"
+        val response = client.get(endpoint) {
+            url {
+                parameters.append("empleado_id", empleadoId.toString())
+                parameters.append("tipo_pago_id", tipoPagoId.toString())
+                parameters.append("fecha", fecha)
+            }
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudo consultar la tarifa vigente.")
+        return runCatching { ApiJson.instance.decodeFromString<TarifaTrabajoResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("No se pudo interpretar la tarifa del trabajo.") }
+    }
+
+    suspend fun crearTrabajo(
+        ordenId: Long,
+        procesoId: Long,
+        empleadoId: Long,
+        tipoPagoId: Long,
+        fecha: String,
+        horaInicio: String?,
+        horaFin: String?,
+        cantidad: Double,
+        unidadId: Long,
+        descripcion: String,
+        observaciones: String,
+    ) {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/employee-works"
+        val response = client.post(endpoint) {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+            contentType(ContentType.Application.Json)
+            setBody(ApiJson.instance.encodeToString(CrearTrabajoEmpleadoRequestDto(
+                employeeId = empleadoId,
+                paymentTypeId = tipoPagoId,
+                date = fecha,
+                startTime = horaInicio,
+                endTime = horaFin,
+                quantity = cantidad,
+                unitId = unidadId,
+                description = descripcion.trim().ifBlank { null },
+                observations = observaciones.trim().ifBlank { null },
+            )))
+        }
+        if (response.status.value !in 200..299) throw apiException(response.bodyAsText(), "No se pudo registrar el trabajo del empleado.")
+    }
+
     private suspend fun consultar(
         pagina: Int,
         perPage: Int,
@@ -246,6 +323,12 @@ class OrdenesRepository(
     private companion object {
         const val LIST_PAGE_SIZE = 30
         const val CALENDAR_PAGE_SIZE = 100
+    }
+
+    private fun apiException(body: String, fallback: String): OrdenesException {
+        val message = runCatching { ApiJson.instance.decodeFromString<ApiError>(body).message }
+            .getOrNull()?.takeIf(String::isNotBlank)
+        return OrdenesException(message ?: fallback)
     }
 }
 
@@ -300,6 +383,77 @@ private data class CrearProcesoRequestDto(
     @SerialName("peso_entrada") val pesoEntrada: Double?,
     @SerialName("peso_salida") val pesoSalida: Double?,
     @SerialName("observaciones") val observaciones: String?,
+)
+
+data class OpcionTrabajoEmpleado(val id: Long, val codigo: String?, val nombre: String, val metodoCalculo: String? = null)
+data class OpcionUnidadTrabajo(val id: Long, val nombre: String)
+data class OpcionesTrabajoEmpleado(
+    val empleados: List<OpcionTrabajoEmpleado>,
+    val tiposPago: List<OpcionTrabajoEmpleado>,
+    val unidades: List<OpcionUnidadTrabajo>,
+)
+data class TarifaTrabajoEmpleado(
+    val tarifa: Double,
+    val moneda: String,
+    val tipoCambio: Double,
+    val tarifaNio: Double,
+    val metodoCalculo: String,
+    val vigenciaInicio: String?,
+    val vigenciaFin: String?,
+)
+
+@Serializable
+private data class OpcionesTrabajoResponseDto(val data: OpcionesTrabajoDto)
+
+@Serializable
+private data class OpcionesTrabajoDto(
+    val employees: List<OpcionTrabajoDto>,
+    @SerialName("payment_types") val paymentTypes: List<OpcionTipoPagoDto>,
+    val units: List<OpcionUnidadDto>,
+)
+
+@Serializable
+private data class OpcionTrabajoDto(val id: Long, val code: String, val name: String)
+
+@Serializable
+private data class OpcionTipoPagoDto(val id: Long, val name: String, @SerialName("calculation_method") val calculationMethod: String)
+
+@Serializable
+private data class OpcionUnidadDto(val id: Long, val name: String)
+
+private fun OpcionesTrabajoDto.toModel() = OpcionesTrabajoEmpleado(
+    empleados = employees.map { OpcionTrabajoEmpleado(it.id, it.code, it.name) },
+    tiposPago = paymentTypes.map { OpcionTrabajoEmpleado(it.id, null, it.name, it.calculationMethod) },
+    unidades = units.map { OpcionUnidadTrabajo(it.id, it.name) },
+)
+
+@Serializable
+private data class TarifaTrabajoResponseDto(val data: TarifaTrabajoDto)
+
+@Serializable
+private data class TarifaTrabajoDto(
+    val rate: Double,
+    val currency: String,
+    @SerialName("exchange_rate") val exchangeRate: Double,
+    @SerialName("rate_nio") val rateNio: Double,
+    @SerialName("calculation_method") val calculationMethod: String,
+    @SerialName("valid_from") val validFrom: String? = null,
+    @SerialName("valid_until") val validUntil: String? = null,
+)
+
+private fun TarifaTrabajoDto.toModel() = TarifaTrabajoEmpleado(rate, currency, exchangeRate, rateNio, calculationMethod, validFrom, validUntil)
+
+@Serializable
+private data class CrearTrabajoEmpleadoRequestDto(
+    @SerialName("empleado_id") val employeeId: Long,
+    @SerialName("tipo_pago_id") val paymentTypeId: Long,
+    @SerialName("fecha") val date: String,
+    @SerialName("hora_inicio") val startTime: String?,
+    @SerialName("hora_fin") val endTime: String?,
+    @SerialName("cantidad") val quantity: Double,
+    @SerialName("unidad_id") val unitId: Long,
+    @SerialName("descripcion") val description: String?,
+    @SerialName("observaciones") val observations: String?,
 )
 
 class OrdenesException(message: String) : Exception(message)
@@ -412,6 +566,21 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
             observaciones = liquidation.observations,
         )
     },
+    trabajosEmpleados = employeeWork.map { work ->
+        TrabajoEmpleadoOrden(
+            id = work.id,
+            codigoProceso = work.process,
+            empleado = work.employee,
+            tipoPago = work.paymentType,
+            fecha = work.date,
+            descripcion = work.description,
+            cantidad = work.quantity?.contentOrNull,
+            unidad = work.unit,
+            moneda = work.currency,
+            total = work.total?.contentOrNull,
+            totalNio = work.totalNio?.contentOrNull,
+        )
+    },
 )
 
 @Serializable
@@ -439,6 +608,22 @@ internal data class OrdenTrabajoDetalleDto(
     val incomes: List<IngresoOrdenDto> = emptyList(),
     val agreements: List<AcuerdoOrdenDto> = emptyList(),
     val liquidations: List<LiquidacionOrdenDto> = emptyList(),
+    @SerialName("employee_work") val employeeWork: List<TrabajoEmpleadoDto> = emptyList(),
+)
+
+@Serializable
+internal data class TrabajoEmpleadoDto(
+    val id: Long,
+    val date: String? = null,
+    val employee: String? = null,
+    val process: String? = null,
+    @SerialName("payment_type") val paymentType: String? = null,
+    val description: String? = null,
+    val quantity: JsonPrimitive? = null,
+    val unit: String? = null,
+    val currency: String? = null,
+    val total: JsonPrimitive? = null,
+    @SerialName("total_nio") val totalNio: JsonPrimitive? = null,
 )
 
 @Serializable
