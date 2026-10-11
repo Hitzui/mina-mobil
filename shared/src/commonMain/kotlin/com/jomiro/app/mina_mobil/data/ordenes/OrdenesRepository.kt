@@ -55,6 +55,26 @@ class OrdenesRepository(
         return result
     }
 
+    suspend fun detalle(id: Long): DetalleOrdenTrabajo {
+        val session = sessions.current()
+            ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$id"
+        val response = client.get(endpoint) {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) {
+            val message = runCatching { ApiJson.instance.decodeFromString<ApiError>(body).message }
+                .getOrNull()
+                ?.takeIf(String::isNotBlank)
+            throw OrdenesException(message ?: "No se pudo cargar el detalle de la orden (HTTP ${response.status.value}).")
+        }
+        return parseOrderDetail(body)
+    }
+
     private suspend fun consultar(
         pagina: Int,
         perPage: Int,
@@ -119,10 +139,81 @@ internal fun parseOrdersPage(body: String): PaginaOrdenes {
     )
 }
 
+internal fun parseOrderDetail(body: String): DetalleOrdenTrabajo {
+    val normalizedBody = body.removePrefix("\uFEFF").trimStart()
+    val payload = runCatching { ApiJson.instance.decodeFromString<OrdenDetalleResponseDto>(normalizedBody) }
+        .getOrElse { error ->
+            val reason = if (normalizedBody.startsWith("<")) {
+                "el servidor devolvió HTML en lugar de JSON"
+            } else {
+                "el formato de la respuesta no es válido (${error::class.simpleName})"
+            }
+            throw OrdenesException("No se pudo interpretar el detalle de la orden: $reason.")
+        }
+    return payload.data.toModel()
+}
+
+private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
+    orden = OrdenTrabajoDto(
+        id = id,
+        code = code,
+        date = date,
+        client = client,
+        description = description,
+        mineralWeight = mineralWeight,
+        weightUnit = weightUnit,
+        status = status,
+        statusCode = statusCode,
+    ).toModel(),
+    procesos = processes.map { process ->
+        ProcesoOrdenTrabajo(
+            id = process.id,
+            codigo = process.code,
+            etapa = process.stage,
+            estado = process.status,
+            fechaInicio = process.startDate,
+            fechaFin = process.endDate,
+            pesoEntrada = process.inputWeight?.contentOrNull?.toDoubleOrNull(),
+            pesoSalida = process.outputWeight?.contentOrNull?.toDoubleOrNull(),
+            observaciones = process.observations,
+        )
+    },
+)
+
 @Serializable
 internal data class OrdenesResponseDto(
     val data: List<OrdenTrabajoDto>,
     val meta: OrdenesMetaDto,
+)
+
+@Serializable
+internal data class OrdenDetalleResponseDto(val data: OrdenTrabajoDetalleDto)
+
+@Serializable
+internal data class OrdenTrabajoDetalleDto(
+    val id: Long,
+    val code: String,
+    val date: String? = null,
+    val client: OrdenClienteDto? = null,
+    val description: String? = null,
+    @SerialName("mineral_weight") val mineralWeight: JsonPrimitive? = null,
+    @SerialName("weight_unit") val weightUnit: String? = null,
+    val status: String,
+    @SerialName("status_code") val statusCode: Int,
+    val processes: List<ProcesoOrdenDto> = emptyList(),
+)
+
+@Serializable
+internal data class ProcesoOrdenDto(
+    val id: Long,
+    val code: String,
+    val stage: String? = null,
+    val status: String,
+    @SerialName("start_date") val startDate: String? = null,
+    @SerialName("end_date") val endDate: String? = null,
+    @SerialName("input_weight") val inputWeight: JsonPrimitive? = null,
+    @SerialName("output_weight") val outputWeight: JsonPrimitive? = null,
+    val observations: String? = null,
 )
 
 @Serializable

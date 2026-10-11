@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.sp
 import com.jomiro.app.mina_mobil.login.LoginViewModel
 import com.jomiro.app.mina_mobil.screen.clientes.listado.ClientesListadoScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenTrabajoDetalleScreen
 import org.koin.compose.viewmodel.koinViewModel
 import kotlinx.coroutines.launch
 
@@ -210,6 +211,7 @@ private enum class AppSection(val title: String, val icon: String) {
 @Composable
 private fun SignedInScreen(userId: Long, name: String, email: String, cashRegister: String, onLogout: () -> Unit) {
     var selectedSection by remember { mutableStateOf(AppSection.HOME) }
+    var selectedOrderId by remember { mutableStateOf<Long?>(null) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
 
@@ -228,6 +230,7 @@ private fun SignedInScreen(userId: Long, name: String, email: String, cashRegist
                             selected = selectedSection == section,
                             onClick = {
                                 selectedSection = section
+                                selectedOrderId = null
                                 coroutineScope.launch { drawerState.close() }
                             },
                             icon = { Text(section.icon, color = if (selectedSection == section) Teal else Muted, fontSize = 20.sp) },
@@ -254,11 +257,21 @@ private fun SignedInScreen(userId: Long, name: String, email: String, cashRegist
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(selectedSection.title, color = Ink, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            if (selectedSection == AppSection.WORK_ORDERS && selectedOrderId != null) "Detalle de orden" else selectedSection.title,
+                            color = Ink,
+                            fontWeight = FontWeight.SemiBold,
+                        )
                     },
                     navigationIcon = {
-                        IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
-                            Text("☰", color = Ink, fontSize = 23.sp)
+                        if (selectedSection == AppSection.WORK_ORDERS && selectedOrderId != null) {
+                            IconButton(onClick = { selectedOrderId = null }) {
+                                Text("←", color = Ink, fontSize = 25.sp)
+                            }
+                        } else {
+                            IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
+                                Text("☰", color = Ink, fontSize = 23.sp)
+                            }
                         }
                     },
                     actions = {
@@ -279,10 +292,20 @@ private fun SignedInScreen(userId: Long, name: String, email: String, cashRegist
                     userId = userId,
                     modifier = Modifier.padding(contentPadding),
                 )
-                AppSection.WORK_ORDERS -> OrdenesTrabajoScreen(
-                    userId = userId,
-                    modifier = Modifier.padding(contentPadding),
-                )
+                AppSection.WORK_ORDERS -> {
+                    if (selectedOrderId == null) {
+                        OrdenesTrabajoScreen(
+                            userId = userId,
+                            onShowOrder = { selectedOrderId = it },
+                            modifier = Modifier.padding(contentPadding),
+                        )
+                    } else {
+                        OrdenTrabajoDetalleScreen(
+                            ordenId = selectedOrderId!!,
+                            modifier = Modifier.padding(contentPadding),
+                        )
+                    }
+                }
             }
         }
     }

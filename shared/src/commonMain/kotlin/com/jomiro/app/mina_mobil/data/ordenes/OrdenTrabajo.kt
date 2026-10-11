@@ -18,3 +18,20 @@ data class PaginaOrdenes(
     val ultimaPagina: Int,
     val total: Int,
 )
+
+data class DetalleOrdenTrabajo(
+    val orden: OrdenTrabajo,
+    val procesos: List<ProcesoOrdenTrabajo>,
+)
+
+data class ProcesoOrdenTrabajo(
+    val id: Long,
+    val codigo: String,
+    val etapa: String?,
+    val estado: String,
+    val fechaInicio: String?,
+    val fechaFin: String?,
+    val pesoEntrada: Double?,
+    val pesoSalida: Double?,
+    val observaciones: String?,
+)

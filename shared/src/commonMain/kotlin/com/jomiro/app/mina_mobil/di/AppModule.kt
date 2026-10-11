@@ -9,6 +9,7 @@ import com.jomiro.app.mina_mobil.login.LoginViewModel
 import com.jomiro.app.mina_mobil.network.resolvedApiBaseUrl
 import com.jomiro.app.mina_mobil.screen.clientes.listado.ClientesListadoViewModel
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoViewModel
+import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenTrabajoDetalleViewModel
 import io.ktor.client.HttpClient
 import org.koin.core.KoinApplication
 import org.koin.core.context.startKoin
@@ -29,6 +30,7 @@ fun startAppKoin(database: MinaDatabase, httpClient: HttpClient): KoinApplicatio
                 viewModel { LoginViewModel(get()) }
                 viewModel { ClientesListadoViewModel(get()) }
                 viewModel { OrdenesTrabajoViewModel(get(), get()) }
+                viewModel { OrdenTrabajoDetalleViewModel(get()) }
             },
         )
     }

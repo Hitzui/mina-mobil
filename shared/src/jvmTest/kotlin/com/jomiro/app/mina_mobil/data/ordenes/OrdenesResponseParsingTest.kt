@@ -52,4 +52,48 @@ class OrdenesResponseParsingTest {
         assertEquals(0.0, order.pesoMineral)
         assertEquals(null, order.unidadPeso)
     }
+
+    @Test
+    fun parsesOrderDetailAndProcessProgress() {
+        val response = """
+            {
+              "data": {
+                "id": 42,
+                "code": "OT-0042",
+                "date": "2026-10-11",
+                "client": {"id": 7, "name": "Cliente de prueba"},
+                "description": "Reparación de equipo",
+                "mineral_weight": "12.50",
+                "weight_unit": "g",
+                "status": "En proceso",
+                "status_code": 2,
+                "processes": [
+                  {
+                    "id": 8,
+                    "code": "PR-0008",
+                    "stage": "Trituración",
+                    "status": "En proceso",
+                    "start_date": "2026-10-10T08:00:00.000000Z",
+                    "end_date": null,
+                    "input_weight": "12.50",
+                    "output_weight": 10.0,
+                    "observations": "En espera de revisión"
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+
+        val detail = parseOrderDetail(response)
+        val process = detail.procesos.single()
+
+        assertEquals(42L, detail.orden.id)
+        assertEquals("OT-0042", detail.orden.codigo)
+        assertEquals("Cliente de prueba", detail.orden.cliente)
+        assertEquals("Trituración", process.etapa)
+        assertEquals("En proceso", process.estado)
+        assertEquals(12.5, process.pesoEntrada)
+        assertEquals(10.0, process.pesoSalida)
+        assertEquals("En espera de revisión", process.observaciones)
+    }
 }
