@@ -82,6 +82,7 @@ fun App() {
                     email = session.email,
                     cashRegister = session.cashRegisterName,
                     canCreateOrders = "ordenes_trabajo.create" in session.permissions,
+                    canCreateProcesses = "procesos_orden.create" in session.permissions,
                     onLogout = viewModel::logout,
                 )
             } else {
@@ -217,6 +218,7 @@ private fun SignedInScreen(
     email: String,
     cashRegister: String,
     canCreateOrders: Boolean,
+    canCreateProcesses: Boolean,
     onLogout: () -> Unit,
 ) {
     var selectedSection by remember { mutableStateOf(AppSection.HOME) }
@@ -326,6 +328,7 @@ private fun SignedInScreen(
                     } else {
                         OrdenTrabajoDetalleScreen(
                             ordenId = selectedOrderId!!,
+                            canCreateProcess = canCreateProcesses,
                             seccion = selectedOrderSection,
                             onSelectSection = { selectedOrderSection = it },
                             modifier = Modifier.padding(contentPadding),

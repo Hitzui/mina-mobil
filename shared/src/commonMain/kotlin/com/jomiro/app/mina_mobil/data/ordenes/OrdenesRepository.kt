@@ -152,6 +152,61 @@ class OrdenesRepository(
         }
     }
 
+    suspend fun opcionesProceso(id: Long): List<EtapaOpcionProceso> {
+        val session = sessions.current()
+            ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$id/process-form-options"
+        val response = client.get(endpoint) {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) {
+            val message = runCatching { ApiJson.instance.decodeFromString<ApiError>(body).message }
+                .getOrNull()?.takeIf(String::isNotBlank)
+            throw OrdenesException(message ?: "No se pudieron cargar las etapas disponibles.")
+        }
+        return runCatching { ApiJson.instance.decodeFromString<EtapasProcesoResponseDto>(body).data.stages.map { it.toModel() } }
+            .getOrElse { throw OrdenesException("No se pudieron interpretar las etapas disponibles.") }
+    }
+
+    suspend fun crearProceso(
+        ordenId: Long,
+        etapaId: Long,
+        fechaInicio: String?,
+        fechaFin: String?,
+        pesoEntrada: Double?,
+        pesoSalida: Double?,
+        observaciones: String,
+    ) {
+        val session = sessions.current()
+            ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/processes"
+        val response = client.post(endpoint) {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+            contentType(ContentType.Application.Json)
+            setBody(ApiJson.instance.encodeToString(CrearProcesoRequestDto(
+                etapaId = etapaId,
+                fechaInicio = fechaInicio,
+                fechaFin = fechaFin,
+                pesoEntrada = pesoEntrada,
+                pesoSalida = pesoSalida,
+                observaciones = observaciones.trim().ifBlank { null },
+            )))
+        }
+        if (response.status.value !in 200..299) {
+            val body = response.bodyAsText()
+            val message = runCatching { ApiJson.instance.decodeFromString<ApiError>(body).message }
+                .getOrNull()?.takeIf(String::isNotBlank)
+            throw OrdenesException(message ?: "No se pudo agregar el proceso (HTTP ${response.status.value}).")
+        }
+    }
+
     private suspend fun consultar(
         pagina: Int,
         perPage: Int,
@@ -225,6 +280,27 @@ private fun OpcionesOrdenDto.toModel() = OpcionesFormularioOrden(
 
 @Serializable
 private data class OrdenCreadaResponseDto(val data: OrdenTrabajoDto)
+
+@Serializable
+private data class EtapasProcesoResponseDto(val data: EtapasProcesoDto)
+
+@Serializable
+private data class EtapasProcesoDto(val stages: List<EtapaProcesoDto>)
+
+@Serializable
+private data class EtapaProcesoDto(val id: Long, val name: String, val order: Int)
+
+private fun EtapaProcesoDto.toModel() = EtapaOpcionProceso(id, name, order)
+
+@Serializable
+private data class CrearProcesoRequestDto(
+    @SerialName("etapa_id") val etapaId: Long,
+    @SerialName("fecha_inicio") val fechaInicio: String?,
+    @SerialName("fecha_fin") val fechaFin: String?,
+    @SerialName("peso_entrada") val pesoEntrada: Double?,
+    @SerialName("peso_salida") val pesoSalida: Double?,
+    @SerialName("observaciones") val observaciones: String?,
+)
 
 class OrdenesException(message: String) : Exception(message)
 

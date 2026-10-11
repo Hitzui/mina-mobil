@@ -23,6 +23,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -40,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import com.jomiro.app.mina_mobil.data.ordenes.AcuerdoOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.CostoOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.DetalleOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.EtapaOpcionProceso
 import com.jomiro.app.mina_mobil.data.ordenes.IngresoOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.LiquidacionOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenTrabajo
@@ -50,6 +53,8 @@ import com.composables.ui.components.AlertDialog as ComposablesAlertDialog
 import com.composables.ui.components.rememberBottomSheetState
 import com.composables.ui.theme.ComposablesTheme
 import org.koin.compose.viewmodel.koinViewModel
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 
 private val DetailInk = Color(0xFF172C3D)
 private val DetailTeal = Color(0xFF087E83)
@@ -65,6 +70,7 @@ enum class OrdenDetalleSeccion(val titulo: String, val icono: String) {
 @Composable
 fun OrdenTrabajoDetalleScreen(
     ordenId: Long,
+    canCreateProcess: Boolean = false,
     seccion: OrdenDetalleSeccion? = null,
     onSelectSection: (OrdenDetalleSeccion) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -73,7 +79,11 @@ fun OrdenTrabajoDetalleScreen(
     val state by viewModel.state.collectAsState()
     val costsSheetState = rememberBottomSheetState()
     var mostrarConfirmacionFinalizar by remember(ordenId) { mutableStateOf(false) }
+    var mostrarFormularioProceso by remember(ordenId) { mutableStateOf(false) }
     LaunchedEffect(ordenId) { viewModel.cargar(ordenId) }
+    LaunchedEffect(state.procesoAgregado) {
+        if (state.procesoAgregado) mostrarFormularioProceso = false
+    }
 
     when {
         state.cargando && state.detalle == null -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -98,7 +108,12 @@ fun OrdenTrabajoDetalleScreen(
                 OrderOverview(
                     modifier = modifier,
                     detalle = detail,
+                    puedeAgregarProceso = canCreateProcess && order.codigoEstado != 0 && order.codigoEstado != 3,
                     onOpenSections = { costsSheetState.targetDetent = BottomSheetDetent.FullyExpanded },
+                    onAddProcess = {
+                        viewModel.cargarEtapasProceso(ordenId)
+                        mostrarFormularioProceso = true
+                    },
                 )
                 ComposablesTheme {
                     BottomSheet(
@@ -217,6 +232,54 @@ fun OrdenTrabajoDetalleScreen(
                         }
                     }
                 }
+                if (mostrarFormularioProceso && !state.procesoAgregado) {
+                    CrearProcesoDialog(
+                        etapas = state.etapasProceso,
+                        cargandoEtapas = state.cargandoEtapasProceso,
+                        creando = state.creandoProceso,
+                        error = state.errorProceso,
+                        onRetry = { viewModel.cargarEtapasProceso(ordenId) },
+                        onDismiss = { mostrarFormularioProceso = false },
+                        onCreate = { etapaId, pesoEntrada, pesoSalida, observaciones ->
+                            viewModel.agregarProceso(
+                                ordenId = ordenId,
+                                etapaId = etapaId,
+                                fechaInicio = null,
+                                fechaFin = null,
+                                pesoEntrada = pesoEntrada,
+                                pesoSalida = pesoSalida,
+                                observaciones = observaciones,
+                            )
+                        },
+                    )
+                }
+                if (state.procesoAgregado) {
+                    ComposablesTheme {
+                        ComposablesAlertDialog(
+                            visible = true,
+                            onDismissRequest = { viewModel.limpiarMensajeProceso() },
+                            paneTitle = "Proceso agregado",
+                        ) {
+                            Column {
+                                Text("Proceso agregado", color = DetailTeal, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    state.errorProceso ?: "El proceso ya aparece en la orden.",
+                                    color = DetailInk,
+                                    fontSize = 14.sp,
+                                )
+                                Spacer(Modifier.height(14.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    Button(
+                                        onClick = { viewModel.limpiarMensajeProceso() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
+                                        shape = RoundedCornerShape(10.dp),
+                                    ) { Text("Entendido") }
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
                 OrderSectionContent(modifier, detail, seccion)
             }
@@ -228,7 +291,9 @@ fun OrdenTrabajoDetalleScreen(
 private fun OrderOverview(
     modifier: Modifier,
     detalle: DetalleOrdenTrabajo,
+    puedeAgregarProceso: Boolean,
     onOpenSections: () -> Unit,
+    onAddProcess: () -> Unit,
 ) {
     val order = detalle.orden
     Column(
@@ -270,7 +335,12 @@ private fun OrderOverview(
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         ) {
             Column(Modifier.fillMaxWidth().padding(18.dp)) {
-                Text("Procesos", color = DetailInk, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Procesos", color = DetailInk, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    if (puedeAgregarProceso) {
+                        TextButton(onClick = onAddProcess) { Text("+ Agregar", color = DetailTeal, fontWeight = FontWeight.SemiBold) }
+                    }
+                }
                 Text(
                     if (detalle.procesos.isEmpty()) "No hay procesos disponibles para mostrar."
                     else "${detalle.procesos.size} ${if (detalle.procesos.size == 1) "proceso asociado" else "procesos asociados"}",
@@ -284,6 +354,132 @@ private fun OrderOverview(
                     detalle.procesos.forEachIndexed { index, process ->
                         ProcessCard(process)
                         if (index < detalle.procesos.lastIndex) Spacer(Modifier.height(9.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CrearProcesoDialog(
+    etapas: List<EtapaOpcionProceso>,
+    cargandoEtapas: Boolean,
+    creando: Boolean,
+    error: String?,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    onCreate: (Long, Double?, Double?, String) -> Unit,
+) {
+    var etapaId by remember { mutableStateOf<Long?>(null) }
+    var pesoEntrada by remember { mutableStateOf("") }
+    var pesoSalida by remember { mutableStateOf("") }
+    var observaciones by remember { mutableStateOf("") }
+    var abrirSelectorEtapa by remember { mutableStateOf(false) }
+    LaunchedEffect(etapas) {
+        if (etapaId == null) etapaId = etapas.firstOrNull()?.id
+    }
+    val entrada = pesoEntrada.trim().replace(',', '.').toDoubleOrNull()
+    val salida = pesoSalida.trim().replace(',', '.').toDoubleOrNull()
+    val pesoValido = (pesoEntrada.isBlank() || entrada != null && entrada >= 0) &&
+        (pesoSalida.isBlank() || salida != null && salida >= 0)
+    ComposablesTheme {
+        ComposablesAlertDialog(
+            visible = true,
+            onDismissRequest = { if (!creando) onDismiss() },
+            paneTitle = "Agregar proceso",
+        ) {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Agregar proceso", color = DetailInk, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(6.dp))
+                Text("El código se asignará automáticamente y el proceso comenzará como Pendiente.", color = DetailMuted, fontSize = 13.sp)
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { abrirSelectorEtapa = true },
+                    enabled = etapas.isNotEmpty() && !cargandoEtapas && !creando,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
+                    shape = RoundedCornerShape(12.dp),
+                ) {
+                    Text(etapas.firstOrNull { it.id == etapaId }?.let { "${it.orden}. ${it.nombre}" } ?: "Seleccionar etapa", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                if (cargandoEtapas) {
+                    Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.height(18.dp), color = DetailTeal, strokeWidth = 2.dp)
+                        Text("  Cargando etapas…", color = DetailMuted, fontSize = 13.sp)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = pesoEntrada,
+                        onValueChange = { pesoEntrada = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Peso entrada") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    )
+                    OutlinedTextField(
+                        value = pesoSalida,
+                        onValueChange = { pesoSalida = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
+                        modifier = Modifier.weight(1f),
+                        label = { Text("Peso salida") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    )
+                }
+                OutlinedTextField(
+                    value = observaciones,
+                    onValueChange = { observaciones = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Observaciones") },
+                    minLines = 2,
+                    maxLines = 4,
+                )
+                error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp)) }
+                if (etapas.isEmpty() && !cargandoEtapas) {
+                    Text("No hay etapas activas disponibles.", color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
+                    TextButton(onClick = onRetry, modifier = Modifier.align(Alignment.End)) { Text("Reintentar", color = DetailTeal) }
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onDismiss, enabled = !creando) { Text("Cancelar", color = DetailMuted) }
+                    Button(
+                        onClick = {
+                            val selected = etapaId ?: return@Button
+                            onCreate(selected, entrada, salida, observaciones)
+                        },
+                        enabled = etapaId != null && etapas.isNotEmpty() && pesoValido && !creando && !cargandoEtapas,
+                        colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        if (creando) CircularProgressIndicator(Modifier.height(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        else Text("Agregar")
+                    }
+                }
+            }
+        }
+    }
+    if (abrirSelectorEtapa) {
+        ComposablesTheme {
+            ComposablesAlertDialog(
+                visible = true,
+                onDismissRequest = { abrirSelectorEtapa = false },
+                paneTitle = "Seleccionar etapa",
+            ) {
+                Column {
+                    Text("Seleccionar etapa", color = DetailInk, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+                    LazyColumn(Modifier.height(280.dp).padding(top = 8.dp)) {
+                        items(etapas, key = EtapaOpcionProceso::id) { stage ->
+                            androidx.compose.material3.TextButton(
+                                onClick = { etapaId = stage.id; abrirSelectorEtapa = false },
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text("${stage.orden}. ${stage.nombre}", color = DetailInk, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+                    }
+                    androidx.compose.material3.TextButton(onClick = { abrirSelectorEtapa = false }, modifier = Modifier.align(Alignment.End)) {
+                        Text("Cerrar", color = DetailTeal)
                     }
                 }
             }

@@ -3,6 +3,7 @@ package com.jomiro.app.mina_mobil.screen.ordenes.listado
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.jomiro.app.mina_mobil.data.ordenes.DetalleOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.EtapaOpcionProceso
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenesRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +18,11 @@ data class OrdenTrabajoDetalleUiState(
     val finalizandoOrden: Boolean = false,
     val finalizacionExitosa: Boolean = false,
     val errorFinalizacion: String? = null,
+    val etapasProceso: List<EtapaOpcionProceso> = emptyList(),
+    val cargandoEtapasProceso: Boolean = false,
+    val creandoProceso: Boolean = false,
+    val procesoAgregado: Boolean = false,
+    val errorProceso: String? = null,
 )
 
 class OrdenTrabajoDetalleViewModel(
@@ -73,5 +79,65 @@ class OrdenTrabajoDetalleViewModel(
 
     fun limpiarMensajeFinalizacion() {
         mutableState.update { it.copy(finalizacionExitosa = false, errorFinalizacion = null) }
+    }
+
+    fun cargarEtapasProceso(id: Long) {
+        if (mutableState.value.cargandoEtapasProceso) return
+        mutableState.update { it.copy(cargandoEtapasProceso = true, errorProceso = null, procesoAgregado = false) }
+        viewModelScope.launch {
+            runCatching { repository.opcionesProceso(id) }
+                .onSuccess { etapas ->
+                    mutableState.update { it.copy(etapasProceso = etapas, cargandoEtapasProceso = false) }
+                }
+                .onFailure { error ->
+                    mutableState.update {
+                        it.copy(
+                            cargandoEtapasProceso = false,
+                            errorProceso = error.message ?: "No se pudieron cargar las etapas.",
+                        )
+                    }
+                }
+        }
+    }
+
+    fun agregarProceso(
+        ordenId: Long,
+        etapaId: Long,
+        fechaInicio: String?,
+        fechaFin: String?,
+        pesoEntrada: Double?,
+        pesoSalida: Double?,
+        observaciones: String,
+    ) {
+        if (mutableState.value.creandoProceso) return
+        mutableState.update { it.copy(creandoProceso = true, errorProceso = null, procesoAgregado = false) }
+        viewModelScope.launch {
+            runCatching {
+                repository.crearProceso(ordenId, etapaId, fechaInicio, fechaFin, pesoEntrada, pesoSalida, observaciones)
+            }.onSuccess {
+                val detalleActualizado = runCatching { repository.detalle(ordenId) }
+                mutableState.update { current ->
+                    current.copy(
+                        detalle = detalleActualizado.getOrNull() ?: current.detalle,
+                        creandoProceso = false,
+                        procesoAgregado = true,
+                        errorProceso = detalleActualizado.exceptionOrNull()?.let {
+                            "El proceso se agregó, pero no se pudo actualizar el detalle. Desliza para actualizar."
+                        },
+                    )
+                }
+            }.onFailure { error ->
+                mutableState.update {
+                    it.copy(
+                        creandoProceso = false,
+                        errorProceso = error.message ?: "No se pudo agregar el proceso.",
+                    )
+                }
+            }
+        }
+    }
+
+    fun limpiarMensajeProceso() {
+        mutableState.update { it.copy(procesoAgregado = false, errorProceso = null) }
     }
 }

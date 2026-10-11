@@ -49,6 +49,8 @@ data class ProcesoOrdenTrabajo(
     val observaciones: String?,
 )
 
+data class EtapaOpcionProceso(val id: Long, val nombre: String, val orden: Int)
+
 data class CostoOrdenTrabajo(
     val id: Long,
     val fecha: String?,
