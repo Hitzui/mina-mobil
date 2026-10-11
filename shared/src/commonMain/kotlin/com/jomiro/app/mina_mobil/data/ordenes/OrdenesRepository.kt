@@ -6,6 +6,7 @@ import com.jomiro.app.mina_mobil.network.ApiJson
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
 import io.ktor.client.request.headers
+import io.ktor.client.request.post
 import io.ktor.client.request.url
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
@@ -73,6 +74,25 @@ class OrdenesRepository(
             throw OrdenesException(message ?: "No se pudo cargar el detalle de la orden (HTTP ${response.status.value}).")
         }
         return parseOrderDetail(body)
+    }
+
+    suspend fun finalizar(id: Long) {
+        val session = sessions.current()
+            ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$id/finalize"
+        val response = client.post(endpoint) {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+        }
+        if (response.status.value !in 200..299) {
+            val body = response.bodyAsText()
+            val message = runCatching { ApiJson.instance.decodeFromString<ApiError>(body).message }
+                .getOrNull()
+                ?.takeIf(String::isNotBlank)
+            throw OrdenesException(message ?: "No se pudo finalizar la orden (HTTP ${response.status.value}).")
+        }
     }
 
     private suspend fun consultar(

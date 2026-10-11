@@ -27,6 +27,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,6 +46,7 @@ import com.jomiro.app.mina_mobil.data.ordenes.OrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.ProcesoOrdenTrabajo
 import com.composables.ui.components.BottomSheet
 import com.composables.ui.components.BottomSheetDetent
+import com.composables.ui.components.AlertDialog as ComposablesAlertDialog
 import com.composables.ui.components.rememberBottomSheetState
 import com.composables.ui.theme.ComposablesTheme
 import org.koin.compose.viewmodel.koinViewModel
@@ -68,6 +72,7 @@ fun OrdenTrabajoDetalleScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val costsSheetState = rememberBottomSheetState()
+    var mostrarConfirmacionFinalizar by remember(ordenId) { mutableStateOf(false) }
     LaunchedEffect(ordenId) { viewModel.cargar(ordenId) }
 
     when {
@@ -120,6 +125,93 @@ fun OrdenTrabajoDetalleScreen(
                                 BottomSheetMenuButton(item, count) {
                                     costsSheetState.targetDetent = BottomSheetDetent.Hidden
                                     onSelectSection(item)
+                                }
+                            }
+                            if (order.codigoEstado != 0 && order.codigoEstado != 3) {
+                                Spacer(Modifier.height(4.dp))
+                                Button(
+                                    onClick = { mostrarConfirmacionFinalizar = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    enabled = !state.finalizandoOrden,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFFB33A3A),
+                                        disabledContainerColor = Color(0xFFB99A9A),
+                                    ),
+                                    shape = RoundedCornerShape(12.dp),
+                                ) {
+                                    if (state.finalizandoOrden) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.height(18.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.dp,
+                                        )
+                                        Text("  Finalizando…")
+                                    } else {
+                                        Text("Dar por finalizada la orden")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (mostrarConfirmacionFinalizar) {
+                    ComposablesTheme {
+                        ComposablesAlertDialog(
+                            visible = true,
+                            onDismissRequest = { mostrarConfirmacionFinalizar = false },
+                            paneTitle = "Finalizar orden",
+                        ) {
+                            Column {
+                                Text("¿Finalizar la orden?", color = DetailInk, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(10.dp))
+                                Text(
+                                    "Esta acción cerrará la orden y no permitirá registrar nuevos datos. Solo se puede finalizar cuando todos sus procesos estén finalizados.",
+                                    color = DetailMuted,
+                                    fontSize = 14.sp,
+                                )
+                                Spacer(Modifier.height(16.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    androidx.compose.material3.TextButton(onClick = { mostrarConfirmacionFinalizar = false }) {
+                                        Text("Cancelar", color = DetailMuted)
+                                    }
+                                    Button(
+                                        onClick = {
+                                            mostrarConfirmacionFinalizar = false
+                                            viewModel.finalizarOrden(ordenId)
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB33A3A)),
+                                        shape = RoundedCornerShape(10.dp),
+                                    ) { Text("Confirmar") }
+                                }
+                            }
+                        }
+                    }
+                }
+                val mensajeFinalizacion = state.errorFinalizacion
+                    ?: if (state.finalizacionExitosa) "La orden de trabajo se finalizó correctamente." else null
+                if (mensajeFinalizacion != null) {
+                    ComposablesTheme {
+                        ComposablesAlertDialog(
+                            visible = true,
+                            onDismissRequest = { viewModel.limpiarMensajeFinalizacion() },
+                            paneTitle = if (state.finalizacionExitosa) "Orden finalizada" else "No se pudo finalizar",
+                        ) {
+                            Column {
+                                Text(
+                                    if (state.finalizacionExitosa) "Orden finalizada" else "No se pudo finalizar la orden",
+                                    color = if (state.finalizacionExitosa) DetailTeal else Color(0xFFB33A3A),
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Spacer(Modifier.height(10.dp))
+                                Text(mensajeFinalizacion, color = DetailInk, fontSize = 14.sp)
+                                Spacer(Modifier.height(16.dp))
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    Button(
+                                        onClick = { viewModel.limpiarMensajeFinalizacion() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
+                                        shape = RoundedCornerShape(10.dp),
+                                    ) { Text("Entendido") }
                                 }
                             }
                         }

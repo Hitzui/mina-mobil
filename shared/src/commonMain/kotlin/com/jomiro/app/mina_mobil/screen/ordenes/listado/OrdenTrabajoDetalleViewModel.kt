@@ -14,6 +14,9 @@ data class OrdenTrabajoDetalleUiState(
     val detalle: DetalleOrdenTrabajo? = null,
     val cargando: Boolean = false,
     val error: String? = null,
+    val finalizandoOrden: Boolean = false,
+    val finalizacionExitosa: Boolean = false,
+    val errorFinalizacion: String? = null,
 )
 
 class OrdenTrabajoDetalleViewModel(
@@ -37,5 +40,38 @@ class OrdenTrabajoDetalleViewModel(
                     }
                 }
         }
+    }
+
+    fun finalizarOrden(id: Long) {
+        if (mutableState.value.finalizandoOrden || mutableState.value.finalizacionExitosa) return
+        mutableState.update { it.copy(finalizandoOrden = true, errorFinalizacion = null) }
+        viewModelScope.launch {
+            runCatching { repository.finalizar(id) }
+                .onSuccess {
+                    mutableState.update { current ->
+                        val detalle = current.detalle
+                        current.copy(
+                            detalle = detalle?.copy(
+                                orden = detalle.orden.copy(estado = "Finalizada", codigoEstado = 3),
+                            ),
+                            finalizandoOrden = false,
+                            finalizacionExitosa = true,
+                            errorFinalizacion = null,
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    mutableState.update {
+                        it.copy(
+                            finalizandoOrden = false,
+                            errorFinalizacion = error.message ?: "No se pudo finalizar la orden.",
+                        )
+                    }
+                }
+        }
+    }
+
+    fun limpiarMensajeFinalizacion() {
+        mutableState.update { it.copy(finalizacionExitosa = false, errorFinalizacion = null) }
     }
 }
