@@ -90,8 +90,11 @@ fun OrdenTrabajoDetalleScreen(
     canViewProcessEquipment: Boolean = false,
     canCreateProcessEquipment: Boolean = false,
     equipmentProcessId: Long? = null,
+    workProcessId: Long? = null,
     onAssignEquipment: (Long) -> Unit = {},
+    onAddEmployeeWork: (Long) -> Unit = {},
     onBackFromEquipment: () -> Unit = {},
+    onBackFromEmployeeWork: () -> Unit = {},
     seccion: OrdenDetalleSeccion? = null,
     onSelectSection: (OrdenDetalleSeccion) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -101,13 +104,9 @@ fun OrdenTrabajoDetalleScreen(
     val costsSheetState = rememberBottomSheetState()
     var mostrarConfirmacionFinalizar by remember(ordenId) { mutableStateOf(false) }
     var mostrarFormularioProceso by remember(ordenId) { mutableStateOf(false) }
-    var procesoParaTrabajo by remember(ordenId) { mutableStateOf<ProcesoOrdenTrabajo?>(null) }
     LaunchedEffect(ordenId) { viewModel.cargar(ordenId) }
     LaunchedEffect(state.procesoAgregado) {
         if (state.procesoAgregado) mostrarFormularioProceso = false
-    }
-    LaunchedEffect(state.trabajoAgregado) {
-        if (state.trabajoAgregado) procesoParaTrabajo = null
     }
 
     when {
@@ -129,7 +128,41 @@ fun OrdenTrabajoDetalleScreen(
         state.detalle != null -> {
             val detail = state.detalle!!
             val order = detail.orden
-            if (equipmentProcessId != null) {
+            if (workProcessId != null) {
+                val process = detail.procesos.firstOrNull { it.id == workProcessId }
+                if (process == null) {
+                    Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
+                        Text("No se encontró el proceso seleccionado.", color = DetailMuted)
+                        TextButton(onClick = onBackFromEmployeeWork) { Text("Volver", color = DetailTeal) }
+                    }
+                } else {
+                    CrearTrabajoEmpleadoScreen(
+                        process = process,
+                        opciones = state.opcionesTrabajo,
+                        cargandoOpciones = state.cargandoOpcionesTrabajo,
+                        tarifa = state.tarifaTrabajo,
+                        cargandoTarifa = state.cargandoTarifaTrabajo,
+                        creando = state.creandoTrabajo,
+                        agregado = state.trabajoAgregado,
+                        error = state.errorTrabajo,
+                        onRetryOptions = { viewModel.cargarOpcionesTrabajo(ordenId, process.id) },
+                        onQuote = { employeeId, paymentTypeId, date ->
+                            viewModel.consultarTarifaTrabajo(ordenId, process.id, employeeId, paymentTypeId, date)
+                        },
+                        onBack = {
+                            viewModel.limpiarMensajeTrabajo()
+                            onBackFromEmployeeWork()
+                        },
+                        onCreate = { employeeId, paymentTypeId, date, start, end, quantity, unitId, description, observations ->
+                            viewModel.agregarTrabajo(
+                                ordenId, process.id, employeeId, paymentTypeId, date, start, end,
+                                quantity, unitId, description, observations,
+                            )
+                        },
+                        modifier = modifier,
+                    )
+                }
+            } else if (equipmentProcessId != null) {
                 val process = detail.procesos.firstOrNull { it.id == equipmentProcessId }
                 if (process == null) {
                     Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
@@ -178,7 +211,7 @@ fun OrdenTrabajoDetalleScreen(
                         },
                     onAddWork = { process ->
                         viewModel.cargarOpcionesTrabajo(ordenId, process.id)
-                        procesoParaTrabajo = process
+                        onAddEmployeeWork(process.id)
                     },
                     onAddEquipment = { process ->
                         viewModel.cargarOpcionesEquipo(ordenId, process.id)
@@ -342,53 +375,6 @@ fun OrdenTrabajoDetalleScreen(
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                     Button(
                                         onClick = { viewModel.limpiarMensajeProceso() },
-                                        colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
-                                        shape = RoundedCornerShape(10.dp),
-                                    ) { Text("Entendido") }
-                                }
-                            }
-                        }
-                    }
-                }
-                procesoParaTrabajo?.let { process ->
-                    if (!state.trabajoAgregado) {
-                        CrearTrabajoEmpleadoDialog(
-                            process = process,
-                            opciones = state.opcionesTrabajo,
-                            cargandoOpciones = state.cargandoOpcionesTrabajo,
-                            tarifa = state.tarifaTrabajo,
-                            cargandoTarifa = state.cargandoTarifaTrabajo,
-                            creando = state.creandoTrabajo,
-                            error = state.errorTrabajo,
-                            onRetryOptions = { viewModel.cargarOpcionesTrabajo(ordenId, process.id) },
-                            onQuote = { employeeId, paymentTypeId, date ->
-                                viewModel.consultarTarifaTrabajo(ordenId, process.id, employeeId, paymentTypeId, date)
-                            },
-                            onDismiss = { if (!state.creandoTrabajo) procesoParaTrabajo = null },
-                            onCreate = { employeeId, paymentTypeId, date, start, end, quantity, unitId, description, observations ->
-                                viewModel.agregarTrabajo(
-                                    ordenId, process.id, employeeId, paymentTypeId, date, start, end,
-                                    quantity, unitId, description, observations,
-                                )
-                            },
-                        )
-                    }
-                }
-                if (state.trabajoAgregado) {
-                    ComposablesTheme {
-                        ComposablesAlertDialog(
-                            visible = true,
-                            onDismissRequest = { viewModel.limpiarMensajeTrabajo() },
-                            paneTitle = "Trabajo registrado",
-                        ) {
-                            Column {
-                                Text("Trabajo registrado", color = DetailTeal, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                                Spacer(Modifier.height(10.dp))
-                                Text(state.errorTrabajo ?: "El trabajo del empleado se agregó al proceso.", color = DetailInk, fontSize = 14.sp)
-                                Spacer(Modifier.height(14.dp))
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                    Button(
-                                        onClick = { viewModel.limpiarMensajeTrabajo() },
                                         colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
                                         shape = RoundedCornerShape(10.dp),
                                     ) { Text("Entendido") }
@@ -918,18 +904,20 @@ private fun ProcessCard(
 }
 
 @Composable
-private fun CrearTrabajoEmpleadoDialog(
+private fun CrearTrabajoEmpleadoScreen(
     process: ProcesoOrdenTrabajo,
     opciones: com.jomiro.app.mina_mobil.data.ordenes.OpcionesTrabajoEmpleado?,
     cargandoOpciones: Boolean,
     tarifa: TarifaTrabajoEmpleado?,
     cargandoTarifa: Boolean,
     creando: Boolean,
+    agregado: Boolean,
     error: String?,
     onRetryOptions: () -> Unit,
     onQuote: (Long?, Long?, String) -> Unit,
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
     onCreate: (Long, Long, String, String?, String?, Double, Long, String, String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val today = kotlin.time.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date.toString()
     var employeeId by remember(process.id) { mutableStateOf<Long?>(null) }
@@ -959,19 +947,15 @@ private fun CrearTrabajoEmpleadoDialog(
     val selectedUnit = opciones?.unidades?.firstOrNull { it.id == unitId }
     val canSubmit = selectedEmployee != null && selectedType != null && selectedUnit != null &&
         tarifa != null && quantityValue != null && quantityValue >= 0 && timeValid && date.isNotBlank() &&
-        !cargandoOpciones && !cargandoTarifa && !creando
+        !cargandoOpciones && !cargandoTarifa && !creando && !agregado
     val total = tarifa?.let { if (it.metodoCalculo == "TARIFA") it.tarifa else it.tarifa * (quantityValue ?: 0.0) }
     val totalNio = tarifa?.let { if (it.metodoCalculo == "TARIFA") it.tarifaNio else it.tarifaNio * (quantityValue ?: 0.0) }
 
-    ComposablesTheme {
-        ComposablesAlertDialog(
-            visible = true,
-            onDismissRequest = { if (!creando) onDismiss() },
-            paneTitle = "Nuevo trabajo de empleado",
-        ) {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("Nuevo trabajo", color = DetailInk, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Text("Proceso ${process.codigo} · ${process.etapa.orEmpty()}", color = DetailMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp, bottom = 12.dp))
+    Column(
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+                Text("Registrar trabajo del empleado", color = DetailInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                Text("Proceso ${process.codigo} · ${process.etapa.orEmpty()}", color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp, bottom = 12.dp))
                 EmployeeWorkPickerButton("Empleado", selectedEmployee?.let { "${it.codigo.orEmpty()} · ${it.nombre}" }, !cargandoOpciones) {
                     openSelector = "employee"
                 }
@@ -1047,8 +1031,16 @@ private fun CrearTrabajoEmpleadoDialog(
                 if (opciones == null && !cargandoOpciones) {
                     TextButton(onClick = onRetryOptions, modifier = Modifier.align(Alignment.End)) { Text("Reintentar", color = DetailTeal) }
                 }
-                Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onDismiss, enabled = !creando) { Text("Cancelar", color = DetailMuted) }
+                if (agregado) {
+                    Surface(Modifier.fillMaxWidth().padding(top = 12.dp), shape = RoundedCornerShape(12.dp), color = Color(0xFFE5F4F0)) {
+                        Column(Modifier.padding(13.dp)) {
+                            Text("Trabajo registrado", color = Color(0xFF267A5B), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text(error ?: "El trabajo ya aparece en el proceso.", color = Color(0xFF267A5B), fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
+                        }
+                    }
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onBack, enabled = !creando, modifier = Modifier.weight(1f)) { Text("Volver al proceso", color = DetailMuted) }
                     Button(
                         onClick = {
                             onCreate(
@@ -1064,15 +1056,14 @@ private fun CrearTrabajoEmpleadoDialog(
                             )
                         },
                         enabled = canSubmit,
+                        modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
                         shape = RoundedCornerShape(10.dp),
                     ) {
                         if (creando) CircularProgressIndicator(Modifier.height(18.dp), color = Color.White, strokeWidth = 2.dp)
-                        else Text("Guardar")
+                        else Text(if (agregado) "Registrado" else "Guardar trabajo")
                     }
                 }
-            }
-        }
     }
 
     val choices = when (openSelector) {

@@ -237,6 +237,7 @@ private fun SignedInScreen(
     var selectedOrderId by remember { mutableStateOf<Long?>(null) }
     var selectedOrderSection by remember { mutableStateOf<OrdenDetalleSeccion?>(null) }
     var equipmentProcessId by remember { mutableStateOf<Long?>(null) }
+    var workProcessId by remember { mutableStateOf<Long?>(null) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
 
@@ -258,6 +259,7 @@ private fun SignedInScreen(
                                 selectedOrderId = null
                                 selectedOrderSection = null
                                 equipmentProcessId = null
+                                workProcessId = null
                                 coroutineScope.launch { drawerState.close() }
                             },
                             icon = { Text(section.icon, color = if (selectedSection == section) Teal else Muted, fontSize = 20.sp) },
@@ -287,6 +289,7 @@ private fun SignedInScreen(
                         Text(
                             when {
                                 selectedSection != AppSection.WORK_ORDERS || selectedOrderId == null -> selectedSection.title
+                                workProcessId != null -> "Agregar trabajo"
                                 equipmentProcessId != null -> "Asignar equipo"
                                 selectedOrderSection != null -> selectedOrderSection!!.titulo
                                 else -> "Detalle de orden"
@@ -298,7 +301,8 @@ private fun SignedInScreen(
                     navigationIcon = {
                         if (selectedSection == AppSection.WORK_ORDERS && selectedOrderId != null) {
                             IconButton(onClick = {
-                                if (equipmentProcessId != null) equipmentProcessId = null
+                                if (workProcessId != null) workProcessId = null
+                                else if (equipmentProcessId != null) equipmentProcessId = null
                                 else if (selectedOrderSection != null) selectedOrderSection = null
                                 else selectedOrderId = null
                             }) {
@@ -345,6 +349,7 @@ private fun SignedInScreen(
                             onShowOrder = {
                                 selectedOrderSection = null
                                 equipmentProcessId = null
+                                workProcessId = null
                                 selectedOrderId = it
                             },
                             modifier = Modifier.padding(contentPadding),
@@ -358,8 +363,11 @@ private fun SignedInScreen(
                             canViewProcessEquipment = canViewProcessEquipment,
                             canCreateProcessEquipment = canCreateProcessEquipment,
                             equipmentProcessId = equipmentProcessId,
+                            workProcessId = workProcessId,
                             onAssignEquipment = { equipmentProcessId = it },
+                            onAddEmployeeWork = { workProcessId = it },
                             onBackFromEquipment = { equipmentProcessId = null },
+                            onBackFromEmployeeWork = { workProcessId = null },
                             seccion = selectedOrderSection,
                             onSelectSection = { selectedOrderSection = it },
                             modifier = Modifier.padding(contentPadding),
