@@ -36,6 +36,44 @@ data class DetalleOrdenTrabajo(
     val acuerdos: List<AcuerdoOrdenTrabajo> = emptyList(),
     val liquidaciones: List<LiquidacionOrdenTrabajo> = emptyList(),
     val trabajosEmpleados: List<TrabajoEmpleadoOrden> = emptyList(),
+    val equipos: List<EquipoProcesoOrden> = emptyList(),
+)
+
+data class EquipoProcesoOrden(
+    val id: Long,
+    val codigoProceso: String?,
+    val equipoId: Long,
+    val codigoEquipo: String?,
+    val nombreEquipo: String?,
+    val inicio: String?,
+    val fin: String?,
+    val dias: Double,
+    val depreciacionDiaria: Double,
+    val depreciacionTotal: Double,
+    val observaciones: String?,
+)
+
+data class EquipoOpcionProceso(
+    val id: Long,
+    val codigo: String,
+    val nombre: String,
+    val valorAdquisicion: Double,
+    val valorResidual: Double,
+    val vidaUtilMeses: Int,
+)
+
+data class OpcionesEquipoProceso(val equipos: List<EquipoOpcionProceso>, val inicioPredeterminado: String)
+
+data class DepreciacionEquipoProceso(
+    val codigo: String,
+    val valorAdquisicion: Double,
+    val valorResidual: Double,
+    val vidaUtilMeses: Int,
+    val dias: Double,
+    val depreciacionDiaria: Double,
+    val depreciacionTotal: Double,
+    val disponible: Boolean,
+    val solapamiento: String?,
 )
 
 data class TrabajoEmpleadoOrden(

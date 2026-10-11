@@ -6,6 +6,8 @@ import com.jomiro.app.mina_mobil.data.ordenes.DetalleOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.EtapaOpcionProceso
 import com.jomiro.app.mina_mobil.data.ordenes.OpcionesTrabajoEmpleado
 import com.jomiro.app.mina_mobil.data.ordenes.TarifaTrabajoEmpleado
+import com.jomiro.app.mina_mobil.data.ordenes.OpcionesEquipoProceso
+import com.jomiro.app.mina_mobil.data.ordenes.DepreciacionEquipoProceso
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenesRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +34,13 @@ data class OrdenTrabajoDetalleUiState(
     val creandoTrabajo: Boolean = false,
     val trabajoAgregado: Boolean = false,
     val errorTrabajo: String? = null,
+    val opcionesEquipo: OpcionesEquipoProceso? = null,
+    val cargandoOpcionesEquipo: Boolean = false,
+    val depreciacionEquipo: DepreciacionEquipoProceso? = null,
+    val calculandoDepreciacionEquipo: Boolean = false,
+    val asignandoEquipo: Boolean = false,
+    val equipoAsignado: Boolean = false,
+    val errorEquipo: String? = null,
 )
 
 class OrdenTrabajoDetalleViewModel(
@@ -41,6 +50,7 @@ class OrdenTrabajoDetalleViewModel(
     val state: StateFlow<OrdenTrabajoDetalleUiState> = mutableState.asStateFlow()
     private var loadedOrderId: Long? = null
     private var tarifaTrabajoVersion = 0
+    private var depreciacionEquipoVersion = 0
 
     fun cargar(id: Long, reintentar: Boolean = false) {
         val current = mutableState.value
@@ -241,5 +251,108 @@ class OrdenTrabajoDetalleViewModel(
 
     fun limpiarMensajeTrabajo() {
         mutableState.update { it.copy(trabajoAgregado = false, errorTrabajo = null, tarifaTrabajo = null) }
+    }
+
+    fun cargarOpcionesEquipo(ordenId: Long, procesoId: Long) {
+        if (mutableState.value.cargandoOpcionesEquipo) return
+        depreciacionEquipoVersion++
+        mutableState.update {
+            it.copy(
+                opcionesEquipo = null,
+                depreciacionEquipo = null,
+                cargandoOpcionesEquipo = true,
+                errorEquipo = null,
+                equipoAsignado = false,
+            )
+        }
+        viewModelScope.launch {
+            runCatching { repository.opcionesEquipo(ordenId, procesoId) }
+                .onSuccess { options ->
+                    mutableState.update { it.copy(opcionesEquipo = options, cargandoOpcionesEquipo = false) }
+                }
+                .onFailure { error ->
+                    mutableState.update {
+                        it.copy(cargandoOpcionesEquipo = false, errorEquipo = error.message ?: "No se pudieron cargar los equipos.")
+                    }
+                }
+        }
+    }
+
+    fun consultarDepreciacionEquipo(
+        ordenId: Long,
+        procesoId: Long,
+        equipoId: Long?,
+        inicio: String,
+        fin: String?,
+    ) {
+        val requestVersion = ++depreciacionEquipoVersion
+        if (equipoId == null || inicio.isBlank()) {
+            mutableState.update { it.copy(depreciacionEquipo = null, calculandoDepreciacionEquipo = false, errorEquipo = null) }
+            return
+        }
+        mutableState.update { it.copy(depreciacionEquipo = null, calculandoDepreciacionEquipo = true, errorEquipo = null) }
+        viewModelScope.launch {
+            runCatching { repository.depreciacionEquipo(ordenId, procesoId, equipoId, inicio, fin) }
+                .onSuccess { estimate ->
+                    if (requestVersion == depreciacionEquipoVersion) {
+                        mutableState.update { it.copy(depreciacionEquipo = estimate, calculandoDepreciacionEquipo = false) }
+                    }
+                }
+                .onFailure { error ->
+                    if (requestVersion == depreciacionEquipoVersion) {
+                        mutableState.update {
+                            it.copy(
+                                calculandoDepreciacionEquipo = false,
+                                errorEquipo = error.message ?: "No se pudo calcular la depreciación del equipo.",
+                            )
+                        }
+                    }
+                }
+        }
+    }
+
+    fun asignarEquipo(
+        ordenId: Long,
+        procesoId: Long,
+        equipoId: Long,
+        inicio: String,
+        fin: String?,
+        observaciones: String,
+    ) {
+        if (mutableState.value.asignandoEquipo) return
+        mutableState.update { it.copy(asignandoEquipo = true, errorEquipo = null, equipoAsignado = false) }
+        viewModelScope.launch {
+            runCatching { repository.asignarEquipo(ordenId, procesoId, equipoId, inicio, fin, observaciones) }
+                .onSuccess {
+                    val refreshed = runCatching { repository.detalle(ordenId) }
+                    mutableState.update { current ->
+                        current.copy(
+                            detalle = refreshed.getOrNull() ?: current.detalle,
+                            asignandoEquipo = false,
+                            equipoAsignado = true,
+                            errorEquipo = refreshed.exceptionOrNull()?.let {
+                                "El equipo se asignó, pero no se pudo actualizar el detalle. Vuelve a cargar la orden."
+                            },
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    mutableState.update {
+                        it.copy(asignandoEquipo = false, errorEquipo = error.message ?: "No se pudo asignar el equipo.")
+                    }
+                }
+        }
+    }
+
+    fun limpiarMensajeEquipo() {
+        mutableState.update {
+            it.copy(
+                equipoAsignado = false,
+                errorEquipo = null,
+                opcionesEquipo = null,
+                depreciacionEquipo = null,
+                calculandoDepreciacionEquipo = false,
+            )
+        }
     }
 }

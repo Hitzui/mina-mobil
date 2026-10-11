@@ -20,6 +20,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -54,6 +55,10 @@ import com.jomiro.app.mina_mobil.data.ordenes.TrabajoEmpleadoOrden
 import com.jomiro.app.mina_mobil.data.ordenes.OpcionTrabajoEmpleado
 import com.jomiro.app.mina_mobil.data.ordenes.OpcionUnidadTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.TarifaTrabajoEmpleado
+import com.jomiro.app.mina_mobil.data.ordenes.EquipoProcesoOrden
+import com.jomiro.app.mina_mobil.data.ordenes.OpcionesEquipoProceso
+import com.jomiro.app.mina_mobil.data.ordenes.DepreciacionEquipoProceso
+import com.jomiro.app.mina_mobil.data.ordenes.EquipoOpcionProceso
 import com.composables.ui.components.BottomSheet
 import com.composables.ui.components.BottomSheetDetent
 import com.composables.ui.components.AlertDialog as ComposablesAlertDialog
@@ -82,6 +87,11 @@ fun OrdenTrabajoDetalleScreen(
     canCreateProcess: Boolean = false,
     canViewEmployeeWork: Boolean = false,
     canCreateEmployeeWork: Boolean = false,
+    canViewProcessEquipment: Boolean = false,
+    canCreateProcessEquipment: Boolean = false,
+    equipmentProcessId: Long? = null,
+    onAssignEquipment: (Long) -> Unit = {},
+    onBackFromEquipment: () -> Unit = {},
     seccion: OrdenDetalleSeccion? = null,
     onSelectSection: (OrdenDetalleSeccion) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -119,13 +129,48 @@ fun OrdenTrabajoDetalleScreen(
         state.detalle != null -> {
             val detail = state.detalle!!
             val order = detail.orden
-            if (seccion == null) {
+            if (equipmentProcessId != null) {
+                val process = detail.procesos.firstOrNull { it.id == equipmentProcessId }
+                if (process == null) {
+                    Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
+                        Text("No se encontró el proceso seleccionado.", color = DetailMuted)
+                        TextButton(onClick = onBackFromEquipment) { Text("Volver", color = DetailTeal) }
+                    }
+                } else {
+                    AsignarEquipoScreen(
+                        ordenId = ordenId,
+                        process = process,
+                        options = state.opcionesEquipo,
+                        loadingOptions = state.cargandoOpcionesEquipo,
+                        estimate = state.depreciacionEquipo,
+                        estimating = state.calculandoDepreciacionEquipo,
+                        saving = state.asignandoEquipo,
+                        assigned = state.equipoAsignado,
+                        error = state.errorEquipo,
+                        existingEquipment = detail.equipos.filter { it.codigoProceso == process.codigo },
+                        onLoadOptions = { viewModel.cargarOpcionesEquipo(ordenId, process.id) },
+                        onEstimate = { equipmentId, start, end ->
+                            viewModel.consultarDepreciacionEquipo(ordenId, process.id, equipmentId, start, end)
+                        },
+                        onAssign = { equipmentId, start, end, observations ->
+                            viewModel.asignarEquipo(ordenId, process.id, equipmentId, start, end, observations)
+                        },
+                        onBack = {
+                            viewModel.limpiarMensajeEquipo()
+                            onBackFromEquipment()
+                        },
+                        modifier = modifier,
+                    )
+                }
+            } else if (seccion == null) {
                 OrderOverview(
                     modifier = modifier,
                     detalle = detail,
                     puedeAgregarProceso = canCreateProcess && order.codigoEstado != 0 && order.codigoEstado != 3,
                     puedeVerTrabajos = canViewEmployeeWork,
                     puedeAgregarTrabajos = canCreateEmployeeWork && order.codigoEstado != 0 && order.codigoEstado != 3,
+                    puedeVerEquipos = canViewProcessEquipment,
+                    puedeAgregarEquipos = canCreateProcessEquipment && order.codigoEstado != 0 && order.codigoEstado != 3,
                     onOpenSections = { costsSheetState.targetDetent = BottomSheetDetent.FullyExpanded },
                     onAddProcess = {
                         viewModel.cargarEtapasProceso(ordenId)
@@ -134,6 +179,10 @@ fun OrdenTrabajoDetalleScreen(
                     onAddWork = { process ->
                         viewModel.cargarOpcionesTrabajo(ordenId, process.id)
                         procesoParaTrabajo = process
+                    },
+                    onAddEquipment = { process ->
+                        viewModel.cargarOpcionesEquipo(ordenId, process.id)
+                        onAssignEquipment(process.id)
                     },
                 )
                 ComposablesTheme {
@@ -362,9 +411,12 @@ private fun OrderOverview(
     puedeAgregarProceso: Boolean,
     puedeVerTrabajos: Boolean,
     puedeAgregarTrabajos: Boolean,
+    puedeVerEquipos: Boolean,
+    puedeAgregarEquipos: Boolean,
     onOpenSections: () -> Unit,
     onAddProcess: () -> Unit,
     onAddWork: (ProcesoOrdenTrabajo) -> Unit,
+    onAddEquipment: (ProcesoOrdenTrabajo) -> Unit,
 ) {
     val order = detalle.orden
     Column(
@@ -430,6 +482,10 @@ private fun OrderOverview(
                             mostrarTrabajos = puedeVerTrabajos,
                             puedeAgregarTrabajo = puedeAgregarTrabajos && openProcess,
                             onAddWork = { onAddWork(process) },
+                            equipos = detalle.equipos.filter { it.codigoProceso == process.codigo },
+                            mostrarEquipos = puedeVerEquipos,
+                            puedeAgregarEquipo = puedeAgregarEquipos && openProcess,
+                            onAddEquipment = { onAddEquipment(process) },
                         )
                         if (index < detalle.procesos.lastIndex) Spacer(Modifier.height(9.dp))
                     }
@@ -764,6 +820,10 @@ private fun ProcessCard(
     mostrarTrabajos: Boolean,
     puedeAgregarTrabajo: Boolean,
     onAddWork: () -> Unit,
+    equipos: List<EquipoProcesoOrden>,
+    mostrarEquipos: Boolean,
+    puedeAgregarEquipo: Boolean,
+    onAddEquipment: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -820,6 +880,38 @@ private fun ProcessCard(
                     onClick = onAddWork,
                     modifier = Modifier.align(Alignment.End).padding(top = 3.dp),
                 ) { Text("+ Agregar trabajo", color = DetailTeal, fontWeight = FontWeight.SemiBold) }
+            }
+            if (mostrarEquipos && equipos.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("Equipos del proceso", color = DetailInk, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                equipos.forEach { assignment ->
+                    Column(Modifier.fillMaxWidth().padding(top = 7.dp)) {
+                        Text(
+                            "${assignment.codigoEquipo.orEmpty()} · ${assignment.nombreEquipo.orEmpty()}",
+                            color = DetailInk,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
+                        Text(
+                            "Inicio: ${assignment.inicio?.let(::formatDetailDateTime) ?: "—"} · Fin: ${assignment.fin?.let(::formatDetailDateTime) ?: "Sigue asignado"}",
+                            color = DetailMuted,
+                            fontSize = 11.sp,
+                        )
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("${assignment.dias.displayDecimal()} días · ${assignment.depreciacionDiaria.displayDecimal()}/día", color = DetailMuted, fontSize = 11.sp)
+                            Text("Deprec. ${assignment.depreciacionTotal.displayDecimal()}", color = DetailTeal, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        assignment.observaciones?.takeIf(String::isNotBlank)?.let {
+                            Text(it, color = DetailMuted, fontSize = 11.sp)
+                        }
+                    }
+                }
+            }
+            if (puedeAgregarEquipo) {
+                androidx.compose.material3.TextButton(
+                    onClick = onAddEquipment,
+                    modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
+                ) { Text("+ Asignar equipo", color = DetailTeal, fontWeight = FontWeight.SemiBold) }
             }
         }
     }
@@ -1123,6 +1215,273 @@ private fun DetailStatusBadge(order: OrdenTrabajo) {
     Surface(shape = RoundedCornerShape(50), color = background) {
         Text(order.estado, color = foreground, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp))
     }
+}
+
+@Composable
+private fun AsignarEquipoScreen(
+    ordenId: Long,
+    process: ProcesoOrdenTrabajo,
+    options: OpcionesEquipoProceso?,
+    loadingOptions: Boolean,
+    estimate: DepreciacionEquipoProceso?,
+    estimating: Boolean,
+    saving: Boolean,
+    assigned: Boolean,
+    error: String?,
+    existingEquipment: List<EquipoProcesoOrden>,
+    onLoadOptions: () -> Unit,
+    onEstimate: (Long?, String, String?) -> Unit,
+    onAssign: (Long, String, String?, String) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val now = kotlin.time.Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
+    var equipmentId by remember(process.id) { mutableStateOf<Long?>(null) }
+    var startDate by remember(process.id) { mutableStateOf(now.date.toString()) }
+    var startTime by remember(process.id) { mutableStateOf("${now.hour.toString().padStart(2, '0')}:${now.minute.toString().padStart(2, '0')}") }
+    var endDate by remember(process.id) { mutableStateOf(now.date.toString()) }
+    var endTime by remember(process.id) { mutableStateOf(startTime) }
+    var sigueAsignado by remember(process.id) { mutableStateOf(true) }
+    var observations by remember(process.id) { mutableStateOf("") }
+    var selectorAbierto by remember { mutableStateOf(false) }
+    var calendarioAbierto by remember { mutableStateOf<String?>(null) }
+    var relojAbierto by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(process.id) { onLoadOptions() }
+    LaunchedEffect(options) {
+        options?.let { loaded ->
+            if (equipmentId == null) equipmentId = loaded.equipos.firstOrNull()?.id
+            if (loaded.inicioPredeterminado.isNotBlank()) {
+                val start = loaded.inicioPredeterminado.substringBefore('Z')
+                startDate = start.substringBefore('T').ifBlank { startDate }
+                startTime = start.substringAfter('T', startTime).take(5)
+            }
+        }
+    }
+
+    val start = "${startDate}T$startTime"
+    val end = if (sigueAsignado) null else "${endDate}T$endTime"
+    LaunchedEffect(equipmentId, start, end) {
+        onEstimate(equipmentId, start, end)
+    }
+
+    val selectedEquipment = options?.equipos?.firstOrNull { it.id == equipmentId }
+    val startValid = startDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) && startTime.matches(Regex("\\d{2}:\\d{2}"))
+    val endValid = sigueAsignado || (
+        endDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) &&
+            endTime.matches(Regex("\\d{2}:\\d{2}")) && end.orEmpty() > start
+        )
+    val canSave = selectedEquipment != null && startValid && endValid && estimate != null &&
+        estimate.solapamiento == null && estimate.disponible && !loadingOptions && !estimating && !saving && !assigned
+
+    Column(
+        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Text("Asignar equipo al proceso", color = DetailInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+        Text("Proceso ${process.codigo} · ${process.etapa.orEmpty()}", color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
+        Surface(
+            modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+            shape = RoundedCornerShape(13.dp),
+            color = Color(0xFFF0F5F6),
+        ) {
+            Text(
+                "Un equipo puede trabajar en procesos distintos en horarios consecutivos, pero no puede estar asignado a dos procesos al mismo tiempo. El servidor verifica el periodo antes de guardar.",
+                color = DetailMuted,
+                fontSize = 13.sp,
+                modifier = Modifier.padding(14.dp),
+            )
+        }
+
+        Text("Equipo", color = DetailMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 16.dp, bottom = 4.dp))
+        Button(
+            onClick = { selectorAbierto = true },
+            enabled = options?.equipos?.isNotEmpty() == true && !loadingOptions && !saving,
+            modifier = Modifier.fillMaxWidth().height(54.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = DetailInk),
+            shape = RoundedCornerShape(11.dp),
+        ) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text(selectedEquipment?.codigo ?: "Seleccionar equipo", color = DetailTeal, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    Text(selectedEquipment?.nombre ?: "Elija molino, taladro u otro equipo", color = DetailInk, fontSize = 14.sp)
+                }
+                Text("⌄", color = DetailMuted, fontSize = 19.sp)
+            }
+        }
+        selectedEquipment?.let {
+            Text(
+                "Valor de adquisición: ${it.valorAdquisicion.displayDecimal()} · Residual: ${it.valorResidual.displayDecimal()} · Vida útil: ${it.vidaUtilMeses} meses",
+                color = DetailMuted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 3.dp, top = 5.dp),
+            )
+        }
+
+        Text("Periodo de uso", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 17.dp, bottom = 5.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            EquipmentDateButton("Inicio", startDate, Modifier.weight(1f)) { calendarioAbierto = "start" }
+            EquipmentTimeButton("Hora de inicio", startTime, Modifier.weight(1f)) { relojAbierto = "start" }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 7.dp).clickable { sigueAsignado = !sigueAsignado },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(checked = sigueAsignado, onCheckedChange = { sigueAsignado = it }, enabled = !saving)
+            Column {
+                Text("Sigue asignado", color = DetailInk, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                Text("Deje el periodo abierto mientras el equipo siga en uso.", color = DetailMuted, fontSize = 12.sp)
+            }
+        }
+        if (!sigueAsignado) {
+            Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                EquipmentDateButton("Fin", endDate, Modifier.weight(1f)) { calendarioAbierto = "end" }
+                EquipmentTimeButton("Hora de fin", endTime, Modifier.weight(1f)) { relojAbierto = "end" }
+            }
+        }
+
+        Text("Depreciación estimada", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 18.dp, bottom = 7.dp))
+        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(13.dp), color = Color.White, shadowElevation = 1.dp) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                when {
+                    loadingOptions || estimating -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.height(18.dp), color = DetailTeal, strokeWidth = 2.dp)
+                        Text("  Calculando días y depreciación…", color = DetailMuted, fontSize = 12.sp)
+                    }
+                    estimate != null -> {
+                        EquipmentInfoRow("Días de uso", "${estimate.dias.displayDecimal()} días")
+                        EquipmentInfoRow("Depreciación por día", estimate.depreciacionDiaria.displayDecimal())
+                        EquipmentInfoRow("Depreciación del periodo", estimate.depreciacionTotal.displayDecimal(), emphasized = true)
+                        if (!estimate.disponible) Text("El equipo ya alcanzó su valor residual y no tiene valor por depreciar.", color = Color(0xFFB33A3A), fontSize = 12.sp)
+                        estimate.solapamiento?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 12.sp) }
+                    }
+                    options?.equipos?.isEmpty() == true -> Text("No hay equipos activos disponibles.", color = DetailMuted, fontSize = 13.sp)
+                    else -> Text("Seleccione un equipo para calcular la depreciación.", color = DetailMuted, fontSize = 13.sp)
+                }
+            }
+        }
+        OutlinedTextField(
+            value = observations,
+            onValueChange = { if (it.length <= 255) observations = it },
+            modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+            label = { Text("Observaciones") },
+            minLines = 2,
+            maxLines = 4,
+            enabled = !saving,
+        )
+        error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
+        if (options == null && !loadingOptions) {
+            TextButton(onClick = onLoadOptions, modifier = Modifier.align(Alignment.End)) { Text("Reintentar carga", color = DetailTeal) }
+        }
+
+        if (assigned) {
+            Surface(Modifier.fillMaxWidth().padding(top = 14.dp), shape = RoundedCornerShape(12.dp), color = Color(0xFFE5F4F0)) {
+                Text("El equipo se asignó correctamente al proceso.", color = Color(0xFF267A5B), modifier = Modifier.padding(13.dp), fontSize = 14.sp)
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 17.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TextButton(onClick = onBack, enabled = !saving, modifier = Modifier.weight(1f)) { Text("Volver al proceso", color = DetailMuted) }
+            Button(
+                onClick = { equipmentId?.let { onAssign(it, start, end, observations) } },
+                enabled = canSave,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
+                shape = RoundedCornerShape(11.dp),
+            ) {
+                if (saving) CircularProgressIndicator(Modifier.height(18.dp), color = Color.White, strokeWidth = 2.dp)
+                else Text("Asignar equipo")
+            }
+        }
+
+        if (existingEquipment.isNotEmpty()) {
+            Text("Equipos ya registrados en este proceso", color = DetailInk, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp, bottom = 6.dp))
+            existingEquipment.forEach { assignment ->
+                Surface(Modifier.fillMaxWidth().padding(bottom = 7.dp), shape = RoundedCornerShape(11.dp), color = Color.White) {
+                    Column(Modifier.padding(12.dp)) {
+                        Text("${assignment.codigoEquipo.orEmpty()} · ${assignment.nombreEquipo.orEmpty()}", color = DetailInk, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                        Text("${formatDetailDateTime(assignment.inicio)} – ${assignment.fin?.let(::formatDetailDateTime) ?: "Sigue asignado"}", color = DetailMuted, fontSize = 12.sp)
+                        Text("Depreciación registrada: ${assignment.depreciacionTotal.displayDecimal()}", color = DetailTeal, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+
+    val equipmentOptions = options?.equipos.orEmpty().map { it.id to "${it.codigo} · ${it.nombre}" }
+    if (selectorAbierto) EmployeeWorkOptionsDialog(
+        title = "Seleccionar equipo",
+        options = equipmentOptions,
+        onSelect = { equipmentId = it; selectorAbierto = false },
+        onDismiss = { selectorAbierto = false },
+    )
+    calendarioAbierto?.let { field ->
+        DateSelectionDialog(
+            initialDate = if (field == "start") startDate else endDate,
+            onSelect = {
+                if (field == "start") startDate = it.toString() else endDate = it.toString()
+                calendarioAbierto = null
+            },
+            onDismiss = { calendarioAbierto = null },
+        )
+    }
+    relojAbierto?.let { field ->
+        EmployeeTimePickerDialog(
+            title = if (field == "start") "Hora de inicio" else "Hora de fin",
+            initialValue = if (field == "start") startTime else endTime,
+            onDismiss = { relojAbierto = null },
+            onSelect = {
+                if (field == "start") startTime = it else endTime = it
+                relojAbierto = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun EquipmentDateButton(label: String, date: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth().height(58.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = DetailInk),
+        shape = RoundedCornerShape(11.dp),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(label, color = DetailMuted, fontSize = 10.sp)
+            Text(date.toDisplayDate(), color = DetailInk, fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun EquipmentTimeButton(label: String, time: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth().height(58.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = DetailInk),
+        shape = RoundedCornerShape(11.dp),
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Text(label, color = DetailMuted, fontSize = 10.sp)
+            Text(time, color = DetailInk, fontSize = 14.sp)
+        }
+    }
+}
+
+@Composable
+private fun EquipmentInfoRow(label: String, value: String, emphasized: Boolean = false) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = if (emphasized) DetailInk else DetailMuted, fontSize = 13.sp, fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal)
+        Text(value, color = if (emphasized) DetailTeal else DetailInk, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+private fun Double.displayDecimal(): String =
+    (kotlin.math.round(this * 10_000) / 10_000).toString()
+
+private fun formatDetailDateTime(value: String?): String {
+    if (value.isNullOrBlank()) return "—"
+    val date = formatDetailDate(value)
+    val time = value.substringAfter('T', "").take(5)
+    return if (time.isBlank()) date else "$date $time"
 }
 
 private fun formatDetailDate(value: String?): String {

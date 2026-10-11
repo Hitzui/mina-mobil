@@ -284,6 +284,70 @@ class OrdenesRepository(
         if (response.status.value !in 200..299) throw apiException(response.bodyAsText(), "No se pudo registrar el trabajo del empleado.")
     }
 
+    suspend fun opcionesEquipo(ordenId: Long, procesoId: Long): OpcionesEquipoProceso {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/equipment-options") {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar los equipos disponibles.")
+        return runCatching { ApiJson.instance.decodeFromString<OpcionesEquipoResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("No se pudo interpretar la lista de equipos.") }
+    }
+
+    suspend fun depreciacionEquipo(
+        ordenId: Long,
+        procesoId: Long,
+        equipoId: Long,
+        fechaInicio: String,
+        fechaFin: String?,
+    ): DepreciacionEquipoProceso {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/equipment-depreciation") {
+            url {
+                parameters.append("equipo_id", equipoId.toString())
+                parameters.append("fecha_inicio", fechaInicio)
+                fechaFin?.let { parameters.append("fecha_fin", it) }
+            }
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudo calcular la depreciación del equipo.")
+        return runCatching { ApiJson.instance.decodeFromString<DepreciacionEquipoResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("No se pudo interpretar el cálculo de depreciación.") }
+    }
+
+    suspend fun asignarEquipo(
+        ordenId: Long,
+        procesoId: Long,
+        equipoId: Long,
+        fechaInicio: String,
+        fechaFin: String?,
+        observaciones: String,
+    ) {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val response = client.post("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/equipment") {
+            headers {
+                set(HttpHeaders.Authorization, "Bearer ${session.token}")
+                set(HttpHeaders.Accept, ContentType.Application.Json.toString())
+            }
+            contentType(ContentType.Application.Json)
+            setBody(ApiJson.instance.encodeToString(AsignarEquipoRequestDto(
+                equipoId = equipoId,
+                fechaInicio = fechaInicio,
+                fechaFin = fechaFin,
+                observaciones = observaciones.trim().ifBlank { null },
+            )))
+        }
+        if (response.status.value !in 200..299) throw apiException(response.bodyAsText(), "No se pudo asignar el equipo al proceso.")
+    }
+
     private suspend fun consultar(
         pagina: Int,
         perPage: Int,
@@ -456,6 +520,61 @@ private data class CrearTrabajoEmpleadoRequestDto(
     @SerialName("observaciones") val observations: String?,
 )
 
+@Serializable
+private data class OpcionesEquipoResponseDto(val data: OpcionesEquipoDto)
+
+@Serializable
+private data class OpcionesEquipoDto(
+    val equipment: List<EquipoOpcionDto>,
+    @SerialName("default_start") val defaultStart: String,
+)
+
+@Serializable
+private data class EquipoOpcionDto(
+    val id: Long,
+    val code: String,
+    val name: String,
+    @SerialName("acquisition_value") val acquisitionValue: Double,
+    @SerialName("residual_value") val residualValue: Double,
+    @SerialName("useful_life_months") val usefulLifeMonths: Int,
+)
+
+private fun OpcionesEquipoDto.toModel() = OpcionesEquipoProceso(
+    equipos = equipment.map {
+        EquipoOpcionProceso(it.id, it.code, it.name, it.acquisitionValue, it.residualValue, it.usefulLifeMonths)
+    },
+    inicioPredeterminado = defaultStart,
+)
+
+@Serializable
+private data class DepreciacionEquipoResponseDto(val data: DepreciacionEquipoDto)
+
+@Serializable
+private data class DepreciacionEquipoDto(
+    val code: String,
+    @SerialName("acquisition_value") val acquisitionValue: Double,
+    @SerialName("residual_value") val residualValue: Double,
+    @SerialName("useful_life_months") val usefulLifeMonths: Int,
+    val days: Double,
+    @SerialName("daily_depreciation") val dailyDepreciation: Double,
+    @SerialName("total_depreciation") val totalDepreciation: Double,
+    @SerialName("available_value") val availableValue: Boolean,
+    val overlap: String? = null,
+)
+
+private fun DepreciacionEquipoDto.toModel() = DepreciacionEquipoProceso(
+    code, acquisitionValue, residualValue, usefulLifeMonths, days,
+    dailyDepreciation, totalDepreciation, availableValue, overlap,
+)
+
+@Serializable
+private data class AsignarEquipoRequestDto(
+    @SerialName("equipo_id") val equipoId: Long,
+    @SerialName("fecha_inicio") val fechaInicio: String,
+    @SerialName("fecha_fin") val fechaFin: String?,
+    @SerialName("observaciones") val observaciones: String?,
+)
+
 class OrdenesException(message: String) : Exception(message)
 
 internal fun parseOrdersPage(body: String): PaginaOrdenes {
@@ -581,6 +700,21 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
             totalNio = work.totalNio?.contentOrNull,
         )
     },
+    equipos = equipment.map { assignment ->
+        EquipoProcesoOrden(
+            id = assignment.id,
+            codigoProceso = assignment.process,
+            equipoId = assignment.equipmentId,
+            codigoEquipo = assignment.equipmentCode,
+            nombreEquipo = assignment.equipmentName,
+            inicio = assignment.startDate,
+            fin = assignment.endDate,
+            dias = assignment.days,
+            depreciacionDiaria = assignment.dailyDepreciation,
+            depreciacionTotal = assignment.totalDepreciation,
+            observaciones = assignment.observations,
+        )
+    },
 )
 
 @Serializable
@@ -609,6 +743,22 @@ internal data class OrdenTrabajoDetalleDto(
     val agreements: List<AcuerdoOrdenDto> = emptyList(),
     val liquidations: List<LiquidacionOrdenDto> = emptyList(),
     @SerialName("employee_work") val employeeWork: List<TrabajoEmpleadoDto> = emptyList(),
+    val equipment: List<EquipoProcesoDto> = emptyList(),
+)
+
+@Serializable
+internal data class EquipoProcesoDto(
+    val id: Long,
+    val process: String? = null,
+    @SerialName("equipment_id") val equipmentId: Long,
+    @SerialName("equipment_code") val equipmentCode: String? = null,
+    @SerialName("equipment_name") val equipmentName: String? = null,
+    @SerialName("start_date") val startDate: String? = null,
+    @SerialName("end_date") val endDate: String? = null,
+    val days: Double = 0.0,
+    @SerialName("daily_depreciation") val dailyDepreciation: Double = 0.0,
+    @SerialName("total_depreciation") val totalDepreciation: Double = 0.0,
+    val observations: String? = null,
 )
 
 @Serializable
