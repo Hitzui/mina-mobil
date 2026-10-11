@@ -1,0 +1,19 @@
+CREATE TABLE cached_client (
+    owner_id INTEGER NOT NULL,
+    id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT,
+    address TEXT,
+    is_active INTEGER NOT NULL,
+    PRIMARY KEY (owner_id, id)
+);
+
+selectCachedClients:
+SELECT * FROM cached_client WHERE owner_id = :ownerId ORDER BY name COLLATE NOCASE;
+
+clearCachedClients:
+DELETE FROM cached_client WHERE owner_id = :ownerId;
+
+saveCachedClient:
+INSERT OR REPLACE INTO cached_client (owner_id, id, name, phone, address, is_active)
+VALUES (:ownerId, :id, :name, :phone, :address, :isActive);

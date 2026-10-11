@@ -20,7 +20,11 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,6 +47,7 @@ private val Muted = Color(0xFF71808B)
 private val CardSurface = Color.White
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun ClientesListadoScreen(
     userId: Long,
     modifier: Modifier = Modifier,
@@ -51,48 +56,55 @@ fun ClientesListadoScreen(
     val state by viewModel.state.collectAsState()
     LaunchedEffect(userId) { viewModel.cargarParaUsuario(userId) }
 
-    when {
-        state.cargando && state.clientes.isEmpty() -> LoadingState(modifier)
-        state.error != null && state.clientes.isEmpty() -> ErrorState(
-            message = state.error.orEmpty(),
-            onRetry = viewModel::reintentar,
-            modifier = modifier,
-        )
-        state.clientes.isEmpty() -> EmptyState(modifier)
-        else -> LazyColumn(
-            modifier = modifier.fillMaxSize(),
-            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(11.dp),
-        ) {
-            item {
-                Text(
-                    text = "${state.total} ${if (state.total == 1) "cliente" else "clientes"}",
-                    color = Muted,
-                    fontSize = 13.sp,
-                    modifier = Modifier.padding(start = 3.dp, bottom = 3.dp),
-                )
+    val clientesVisibles = state.clientes.filter { cliente ->
+        val query = state.busqueda.trim()
+        query.isEmpty() || cliente.nombre.contains(query, ignoreCase = true) ||
+            cliente.id.toString().contains(query) || cliente.telefono.orEmpty().contains(query, ignoreCase = true)
+    }
+
+    PullToRefreshBox(
+        isRefreshing = state.refrescando,
+        onRefresh = viewModel::refrescar,
+        modifier = modifier.fillMaxSize(),
+    ) {
+        when {
+            state.cargando && state.clientes.isEmpty() -> LazyColumn(Modifier.fillMaxSize()) {
+                item { LoadingState(Modifier.fillMaxWidth()) }
             }
-            if (state.error != null) {
-                item { InlineError(state.error.orEmpty(), viewModel::cargarMas) }
+            state.error != null && state.clientes.isEmpty() -> LazyColumn(Modifier.fillMaxSize()) {
+                item { ErrorState(state.error.orEmpty(), viewModel::reintentar, Modifier.fillMaxWidth()) }
             }
-            items(state.clientes, key = Cliente::id) { cliente ->
-                ClienteCard(cliente)
-            }
-            if (state.hayMas) {
+            else -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(11.dp),
+            ) {
                 item {
-                    Button(
-                        onClick = viewModel::cargarMas,
-                        enabled = !state.cargandoMas,
-                        modifier = Modifier.fillMaxWidth().padding(top = 3.dp),
+                    OutlinedTextField(
+                        value = state.busqueda,
+                        onValueChange = viewModel::actualizarBusqueda,
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("Buscar clientes") },
+                        placeholder = { Text("Nombre, teléfono o número") },
+                        leadingIcon = { Text("⌕", color = Teal, fontSize = 22.sp) },
                         shape = RoundedCornerShape(13.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Teal),
-                    ) {
-                        if (state.cargandoMas) {
-                            CircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
-                        } else {
-                            Text("Cargar más clientes")
-                        }
-                    }
+                        colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Teal, focusedLabelColor = Teal),
+                    )
+                    val shown = clientesVisibles.size
+                    Text(
+                        text = if (state.busqueda.isBlank()) "$shown ${if (shown == 1) "cliente" else "clientes"}"
+                        else "$shown resultados de ${state.total} clientes",
+                        color = Muted,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(start = 3.dp, top = 10.dp, bottom = 3.dp),
+                    )
+                }
+                if (state.error != null) item { InlineError(state.error.orEmpty(), viewModel::refrescar) }
+                if (clientesVisibles.isEmpty()) {
+                    item { EmptyState(Modifier.fillMaxWidth()) }
+                } else {
+                    items(clientesVisibles, key = Cliente::id) { cliente -> ClienteCard(cliente) }
                 }
             }
         }
@@ -169,14 +181,14 @@ private fun ClienteCard(cliente: Cliente) {
 
 @Composable
 private fun LoadingState(modifier: Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(modifier.height(300.dp), contentAlignment = Alignment.Center) {
         CircularProgressIndicator(color = Teal)
     }
 }
 
 @Composable
 private fun EmptyState(modifier: Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(modifier.height(220.dp), contentAlignment = Alignment.Center) {
         Text("No hay clientes registrados.", color = Muted, style = MaterialTheme.typography.bodyLarge)
     }
 }
@@ -184,7 +196,7 @@ private fun EmptyState(modifier: Modifier) {
 @Composable
 private fun ErrorState(message: String, onRetry: () -> Unit, modifier: Modifier) {
     Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
+        modifier = modifier.height(300.dp).padding(24.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

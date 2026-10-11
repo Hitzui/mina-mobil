@@ -12,9 +12,10 @@ import kotlinx.coroutines.launch
 
 data class ClientesListadoUiState(
     val clientes: List<Cliente> = emptyList(),
+    val busqueda: String = "",
     val total: Int = 0,
     val cargando: Boolean = false,
-    val cargandoMas: Boolean = false,
+    val refrescando: Boolean = false,
     val error: String? = null,
     val paginaActual: Int = 0,
     val ultimaPagina: Int = 1,
@@ -28,63 +29,74 @@ class ClientesListadoViewModel(
     private val mutableState = MutableStateFlow(ClientesListadoUiState())
     val state: StateFlow<ClientesListadoUiState> = mutableState.asStateFlow()
     private var loadedForUserId: Long? = null
+    private var activeUserId: Long? = null
 
     fun cargarParaUsuario(userId: Long) {
         val actual = mutableState.value
-        if (loadedForUserId == userId && (actual.paginaActual > 0 || actual.cargando)) return
-
+        if (loadedForUserId == userId && (actual.clientes.isNotEmpty() || actual.cargando)) return
         loadedForUserId = userId
-        mutableState.value = ClientesListadoUiState()
-        cargarPrimeraPagina()
+        activeUserId = userId
+        val locales = clientesRepository.listarLocales(userId)
+        mutableState.value = ClientesListadoUiState(
+            clientes = locales,
+            total = locales.size,
+            cargando = locales.isEmpty(),
+            paginaActual = if (locales.isEmpty()) 0 else 1,
+        )
+        if (locales.isEmpty()) sincronizarDesdeApi()
     }
 
-    fun reintentar() = cargarPrimeraPagina()
+    fun actualizarBusqueda(value: String) = mutableState.update { it.copy(busqueda = value) }
+
+    fun reintentar() = sincronizarDesdeApi()
+
+    fun refrescar() = sincronizarDesdeApi(manual = true)
 
     fun cargarMas() {
-        val actual = mutableState.value
-        if (actual.cargando || actual.cargandoMas || !actual.hayMas) return
-
-        mutableState.update { it.copy(cargandoMas = true, error = null) }
-        viewModelScope.launch {
-            runCatching { clientesRepository.listar(actual.paginaActual + 1) }
-                .onSuccess { pagina ->
-                    mutableState.update { state ->
-                        state.copy(
-                            clientes = state.clientes + pagina.clientes,
-                            total = pagina.total,
-                            cargandoMas = false,
-                            paginaActual = pagina.paginaActual,
-                            ultimaPagina = pagina.ultimaPagina,
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    mutableState.update {
-                        it.copy(cargandoMas = false, error = error.message ?: "No se pudieron cargar más clientes.")
-                    }
-                }
-        }
+        // Se carga y cachea el catálogo completo, por eso no hay más páginas locales.
     }
 
-    private fun cargarPrimeraPagina() {
-        if (mutableState.value.cargando) return
-        mutableState.update { it.copy(cargando = true, cargandoMas = false, error = null) }
+    private fun sincronizarDesdeApi(manual: Boolean = false) {
+        val ownerId = activeUserId ?: return
+        val current = mutableState.value
+        if (current.cargando || current.refrescando) return
+        mutableState.update {
+            it.copy(cargando = current.clientes.isEmpty(), refrescando = manual, error = null)
+        }
         viewModelScope.launch {
-            runCatching { clientesRepository.listar(1) }
-                .onSuccess { pagina ->
+            runCatching {
+                val todos = mutableListOf<Cliente>()
+                var numeroPagina = 1
+                var ultimaPagina = 1
+                while (numeroPagina <= ultimaPagina) {
+                    val page = clientesRepository.listar(numeroPagina)
+                    todos += page.clientes
+                    ultimaPagina = page.ultimaPagina
+                    numeroPagina++
+                }
+                clientesRepository.guardarLocales(ownerId, todos)
+                todos
+            }
+                .onSuccess { clientes ->
                     mutableState.update {
                         it.copy(
-                            clientes = pagina.clientes,
-                            total = pagina.total,
+                            clientes = clientes,
+                            total = clientes.size,
                             cargando = false,
-                            paginaActual = pagina.paginaActual,
-                            ultimaPagina = pagina.ultimaPagina,
+                            refrescando = false,
+                            paginaActual = 1,
+                            ultimaPagina = 1,
+                            error = null,
                         )
                     }
                 }
                 .onFailure { error ->
                     mutableState.update {
-                        it.copy(cargando = false, error = error.message ?: "No se pudo cargar la lista de clientes.")
+                        it.copy(
+                            cargando = false,
+                            refrescando = false,
+                            error = error.message ?: "No se pudo cargar la lista de clientes.",
+                        )
                     }
                 }
         }

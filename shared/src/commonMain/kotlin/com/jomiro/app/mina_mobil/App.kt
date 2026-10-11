@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jomiro.app.mina_mobil.login.LoginViewModel
 import com.jomiro.app.mina_mobil.screen.clientes.listado.ClientesListadoScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoScreen
 import org.koin.compose.viewmodel.koinViewModel
 import kotlinx.coroutines.launch
 
@@ -275,9 +276,8 @@ private fun SignedInScreen(userId: Long, name: String, email: String, cashRegist
                     userId = userId,
                     modifier = Modifier.padding(contentPadding),
                 )
-                AppSection.WORK_ORDERS -> ModulePlaceholder(
-                    title = "Órdenes de trabajo",
-                    description = "Aquí se mostrarán las órdenes de trabajo del taller.",
+                AppSection.WORK_ORDERS -> OrdenesTrabajoScreen(
+                    userId = userId,
                     modifier = Modifier.padding(contentPadding),
                 )
             }
@@ -314,26 +314,6 @@ private fun HomeContent(name: String, email: String, cashRegister: String, modif
                 Text("CAJA ASIGNADA", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
                 Spacer(Modifier.height(8.dp))
                 Text(cashRegister, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Medium)
-            }
-        }
-    }
-}
-
-@Composable
-private fun ModulePlaceholder(title: String, description: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.fillMaxSize().padding(22.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Surface(color = Color.White, shape = RoundedCornerShape(20.dp), shadowElevation = 1.dp) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(28.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(title, color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(9.dp))
-                Text(description, color = Muted, fontSize = 14.sp, lineHeight = 20.sp)
             }
         }
     }

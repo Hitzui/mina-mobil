@@ -1,0 +1,9 @@
+CREATE TABLE cached_client (
+    owner_id INTEGER NOT NULL,
+    id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT,
+    address TEXT,
+    is_active INTEGER NOT NULL,
+    PRIMARY KEY (owner_id, id)
+);
