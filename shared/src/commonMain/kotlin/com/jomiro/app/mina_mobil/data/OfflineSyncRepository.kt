@@ -36,6 +36,46 @@ class OfflineSyncRepository(
 ) {
     fun downloaded(ownerId: Long): Boolean = database.clientCacheQueries.getOfflineSnapshot(ownerId).executeAsOneOrNull() != null
 
+    fun connectionMode(ownerId: Long): ConnectionMode =
+        database.clientCacheQueries.selectConnectionMode(ownerId).executeAsOneOrNull()?.let(ConnectionMode::fromValue)
+            ?: if (downloaded(ownerId)) ConnectionMode.OFFLINE else ConnectionMode.ONLINE
+
+    fun initializeConnectionMode(ownerId: Long): ConnectionMode {
+        val stored = database.clientCacheQueries.selectConnectionMode(ownerId).executeAsOneOrNull()
+        if (stored != null) return ConnectionMode.fromValue(stored)
+        val initialMode = if (downloaded(ownerId)) ConnectionMode.OFFLINE else ConnectionMode.ONLINE
+        database.clientCacheQueries.saveConnectionMode(ownerId, initialMode.value)
+        return initialMode
+    }
+
+    fun isOfflineMode(ownerId: Long): Boolean = connectionMode(ownerId) == ConnectionMode.OFFLINE
+
+    fun offlineSnapshot(ownerId: Long): JsonObject? {
+        if (!isOfflineMode(ownerId)) return null
+        return snapshot(ownerId) ?: throw OfflineSyncException(
+            "El modo Offline está seleccionado, pero no hay datos descargados. Descargue los datos antes de trabajar.",
+        )
+    }
+
+    fun setConnectionMode(ownerId: Long, mode: ConnectionMode) {
+        val storedMode = database.clientCacheQueries.selectConnectionMode(ownerId).executeAsOneOrNull()
+        if (mode == connectionMode(ownerId)) {
+            if (storedMode == null) database.clientCacheQueries.saveConnectionMode(ownerId, mode.value)
+            return
+        }
+        if (mode == ConnectionMode.ONLINE && pendingCount(ownerId) > 0) {
+            throw OfflineSyncException("Hay cambios offline pendientes. Súbalos antes de cambiar al modo Online.")
+        }
+        database.transaction {
+            if (mode == ConnectionMode.ONLINE) {
+                database.clientCacheQueries.clearOfflineSnapshot(ownerId)
+                database.clientCacheQueries.clearCachedClients(ownerId)
+                database.clientCacheQueries.clearOfflineEntities(ownerId)
+            }
+            database.clientCacheQueries.saveConnectionMode(ownerId, mode.value)
+        }
+    }
+
     fun snapshot(ownerId: Long): JsonObject? = database.clientCacheQueries.getOfflineSnapshot(ownerId)
         .executeAsOneOrNull()?.let { raw ->
             runCatching { ApiJson.instance.decodeFromString<JsonObject>(raw).getValue("data").jsonObject }.getOrNull()
@@ -199,6 +239,15 @@ class OfflineSyncRepository(
 data class OfflineLocalEntity(val id: Long, val type: String, val payload: JsonObject)
 
 class OfflineSyncException(message: String) : Exception(message)
+
+enum class ConnectionMode(val value: String) {
+    ONLINE("online"),
+    OFFLINE("offline");
+
+    companion object {
+        fun fromValue(value: String): ConnectionMode = entries.firstOrNull { it.value == value } ?: ONLINE
+    }
+}
 
 @Serializable
 private data class UploadOperationsDto(val operations: List<PendingOperationDto>)

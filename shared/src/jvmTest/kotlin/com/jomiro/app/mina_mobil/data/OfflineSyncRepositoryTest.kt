@@ -9,8 +9,66 @@ import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 
 class OfflineSyncRepositoryTest {
+    @Test
+    fun onlineIsTheDefaultButLegacyOfflineSnapshotsRemainInOfflineMode() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        MinaDatabase.Schema.create(driver)
+        val database = MinaDatabase(driver)
+        val client = HttpClient(CIO)
+        val repository = OfflineSyncRepository(client, "http://localhost/api/v1", SessionRepository(database), database)
+
+        assertEquals(ConnectionMode.ONLINE, repository.initializeConnectionMode(6))
+        database.clientCacheQueries.saveOfflineSnapshot(7, "{\"data\":{}}", "2026-10-12T00:00:00Z")
+        assertEquals(ConnectionMode.OFFLINE, repository.connectionMode(7))
+        assertEquals(ConnectionMode.OFFLINE, repository.initializeConnectionMode(7))
+        database.clientCacheQueries.clearOfflineSnapshot(7)
+        assertEquals(ConnectionMode.OFFLINE, repository.connectionMode(7))
+
+        repository.setConnectionMode(7, ConnectionMode.ONLINE)
+
+        assertEquals(ConnectionMode.ONLINE, repository.connectionMode(7))
+        assertFalse(repository.downloaded(7))
+        client.close()
+        driver.close()
+    }
+
+    @Test
+    fun cannotSwitchOnlineWhileOfflineOperationsArePending() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        MinaDatabase.Schema.create(driver)
+        val database = MinaDatabase(driver)
+        val client = HttpClient(CIO)
+        val repository = OfflineSyncRepository(client, "http://localhost/api/v1", SessionRepository(database), database)
+        repository.setConnectionMode(8, ConnectionMode.OFFLINE)
+        repository.enqueueOperation(8, "order.create", buildJsonObject { put("cliente_id", 5) })
+
+        assertFailsWith<OfflineSyncException> {
+            repository.setConnectionMode(8, ConnectionMode.ONLINE)
+        }
+        assertEquals(ConnectionMode.OFFLINE, repository.connectionMode(8))
+
+        client.close()
+        driver.close()
+    }
+
+    @Test
+    fun migratesConnectionModePreferenceFromSchemaVersionFour() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        MinaDatabase.Schema.create(driver)
+        driver.execute(null, "DROP TABLE mobile_connection_mode", 0)
+        driver.execute(null, "PRAGMA user_version = 4", 0)
+
+        MinaDatabase.Schema.migrate(driver, 4, MinaDatabase.Schema.version)
+
+        val database = MinaDatabase(driver)
+        database.clientCacheQueries.saveConnectionMode(9, "offline")
+        assertEquals("offline", database.clientCacheQueries.selectConnectionMode(9).executeAsOne())
+        driver.close()
+    }
+
     @Test
     fun migratesAnExistingDatabaseToOfflineStorage() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)

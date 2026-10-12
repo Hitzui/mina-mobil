@@ -31,6 +31,18 @@ CREATE TABLE offline_local_entity (
     PRIMARY KEY (owner_id, local_id)
 );
 
+CREATE TABLE mobile_connection_mode (
+    owner_id INTEGER NOT NULL PRIMARY KEY,
+    mode TEXT NOT NULL CHECK (mode IN ('online', 'offline'))
+);
+
+selectConnectionMode:
+SELECT mode FROM mobile_connection_mode WHERE owner_id = :ownerId;
+
+saveConnectionMode:
+INSERT OR REPLACE INTO mobile_connection_mode (owner_id, mode)
+VALUES (:ownerId, :mode);
+
 selectCachedClients:
 SELECT * FROM cached_client WHERE owner_id = :ownerId ORDER BY name COLLATE NOCASE;
 

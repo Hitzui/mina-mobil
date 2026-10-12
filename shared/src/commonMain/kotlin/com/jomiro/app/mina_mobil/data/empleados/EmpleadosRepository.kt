@@ -34,7 +34,7 @@ class EmpleadosRepository(
     suspend fun listar(busqueda: String): List<Empleado> {
         val session = sessions.current()
             ?: throw EmpleadosException("La sesión expiró. Inicia sesión nuevamente.")
-        offlineSync.snapshot(session.userId)?.get("employees")?.let { raw ->
+        offlineSync.offlineSnapshot(session.userId)?.get("employees")?.let { raw ->
             return runCatching { ApiJson.instance.decodeFromString<List<EmpleadoDto>>(raw.toString()).map { it.toModel() } }
                 .getOrElse { throw EmpleadosException("La copia local de empleados está dañada. Descargue los datos nuevamente.") }
                 .filter { empleado ->

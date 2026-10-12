@@ -43,7 +43,7 @@ class ClientesListadoViewModel(
             cargando = false,
             paginaActual = if (locales.isEmpty()) 0 else 1,
         )
-        if (locales.isEmpty()) sincronizarDesdeApi()
+        if (!clientesRepository.isOfflineMode(userId)) sincronizarDesdeApi()
     }
 
     fun actualizarBusqueda(value: String) = mutableState.update { it.copy(busqueda = value) }

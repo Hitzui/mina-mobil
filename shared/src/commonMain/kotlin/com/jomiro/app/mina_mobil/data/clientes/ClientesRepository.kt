@@ -27,6 +27,8 @@ class ClientesRepository(
     private val database: MinaDatabase,
     private val offlineSync: OfflineSyncRepository,
 ) {
+    fun isOfflineMode(ownerId: Long): Boolean = offlineSync.isOfflineMode(ownerId)
+
     fun listarLocales(ownerId: Long): List<Cliente> = database.clientCacheQueries.selectCachedClients(ownerId).executeAsList().map { row ->
         Cliente(row.id, row.name, row.phone, row.address, row.is_active != 0L)
     }
@@ -49,7 +51,7 @@ class ClientesRepository(
 
     suspend fun listar(pagina: Int): PaginaClientes {
         val session = sessions.current() ?: throw ClientesException("La sesión expiró. Inicia sesión nuevamente.")
-        offlineSync.snapshot(session.userId)?.get("clients")?.let { raw ->
+        offlineSync.offlineSnapshot(session.userId)?.get("clients")?.let { raw ->
             val clients = runCatching { ApiJson.instance.decodeFromString<List<ClienteDtoOffline>>(raw.toString()) }
                 .getOrElse { throw ClientesException("La copia local de clientes está dañada. Descargue los datos nuevamente.") }
                 .map { Cliente(it.id, it.name, it.phone, it.address, it.isActive) }

@@ -166,6 +166,7 @@ class OrdenesTrabajoViewModel(
     fun reintentarCalendario() = cargarMes()
 
     fun refrescar() {
+        cargarClientes()
         if (mutableState.value.vista == VistaOrdenes.CALENDARIO) cargarMes(forzar = true)
         else cargarPrimeraPagina(refrescando = true)
     }

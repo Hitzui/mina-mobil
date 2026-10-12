@@ -62,6 +62,8 @@ import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenTrabajoDetalleScree
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenDetalleSeccion
 import com.jomiro.app.mina_mobil.screen.sync.OfflineSyncScreen
 import com.jomiro.app.mina_mobil.data.OfflineSyncRepository
+import com.jomiro.app.mina_mobil.data.ConnectionMode
+import com.jomiro.app.mina_mobil.screen.settings.ConnectionSettingsScreen
 import com.jomiro.app.mina_mobil.screen.clientes.listado.ClientesListadoViewModel
 import com.jomiro.app.mina_mobil.screen.empleados.listado.EmpleadosViewModel
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoViewModel
@@ -232,7 +234,8 @@ private enum class AppSection(val title: String, val icon: String) {
     WORK_ORDERS("Órdenes de trabajo", "▤"),
     EMPLOYEES("Empleados", "♙"),
     DOWNLOAD("Descarga", "↓"),
-    UPLOAD("Upload", "↑"),
+    UPLOAD("Subir cambios", "↑"),
+    SETTINGS("Configuración", "⚙"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -266,6 +269,7 @@ private fun SignedInScreen(
     val employeesViewModel: EmpleadosViewModel = koinViewModel()
     val ordersViewModel: OrdenesTrabajoViewModel = koinViewModel()
     var hasOfflineSnapshot by remember(userId) { mutableStateOf(offlineSyncRepository.downloaded(userId)) }
+    var connectionMode by remember(userId) { mutableStateOf(offlineSyncRepository.connectionMode(userId)) }
     var offlineSnapshotRevision by remember(userId) { mutableStateOf(0) }
     var isSyncRunning by remember(userId) { mutableStateOf(false) }
     var selectedSection by remember { mutableStateOf(AppSection.HOME) }
@@ -278,6 +282,9 @@ private fun SignedInScreen(
     var editingOrder by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
+    androidx.compose.runtime.LaunchedEffect(userId) {
+        connectionMode = offlineSyncRepository.initializeConnectionMode(userId)
+    }
     androidx.compose.runtime.LaunchedEffect(offlineSnapshotRevision, userId) {
         if (offlineSnapshotRevision > 0) {
             clientsViewModel.refrescar()
@@ -393,11 +400,11 @@ private fun SignedInScreen(
                     cashRegister = cashRegister,
                     modifier = Modifier.padding(contentPadding),
                 )
-                AppSection.CLIENTS -> if (hasOfflineSnapshot) ClientesListadoScreen(
+                AppSection.CLIENTS -> if (connectionMode == ConnectionMode.ONLINE || hasOfflineSnapshot) ClientesListadoScreen(
                     userId = userId,
                     modifier = Modifier.padding(contentPadding),
                 ) else OfflineRequiredContent(Modifier.padding(contentPadding)) { selectedSection = AppSection.DOWNLOAD }
-                AppSection.EMPLOYEES -> if (hasOfflineSnapshot) EmpleadosScreen(
+                AppSection.EMPLOYEES -> if (connectionMode == ConnectionMode.ONLINE || hasOfflineSnapshot) EmpleadosScreen(
                     userId = userId,
                     modifier = Modifier.padding(contentPadding),
                 ) else OfflineRequiredContent(Modifier.padding(contentPadding)) { selectedSection = AppSection.DOWNLOAD }
@@ -421,8 +428,27 @@ private fun SignedInScreen(
                     },
                     modifier = Modifier.padding(contentPadding),
                 )
+                AppSection.SETTINGS -> ConnectionSettingsScreen(
+                    mode = connectionMode,
+                    hasOfflineSnapshot = hasOfflineSnapshot,
+                    pendingOperations = offlineSyncRepository.pendingCount(userId),
+                    onSelectMode = { selectedMode ->
+                        runCatching { offlineSyncRepository.setConnectionMode(userId, selectedMode) }
+                            .onSuccess {
+                                connectionMode = selectedMode
+                                hasOfflineSnapshot = offlineSyncRepository.downloaded(userId)
+                                clientsViewModel.refrescar()
+                                employeesViewModel.refrescar()
+                                ordersViewModel.refrescar()
+                            }
+                            .exceptionOrNull()?.message
+                    },
+                    onOpenDownload = { selectedSection = AppSection.DOWNLOAD },
+                    onOpenUpload = { selectedSection = AppSection.UPLOAD },
+                    modifier = Modifier.padding(contentPadding),
+                )
                 AppSection.WORK_ORDERS -> {
-                    if (!hasOfflineSnapshot) {
+                    if (connectionMode == ConnectionMode.OFFLINE && !hasOfflineSnapshot) {
                         OfflineRequiredContent(Modifier.padding(contentPadding)) { selectedSection = AppSection.DOWNLOAD }
                     } else if (selectedOrderId == null) {
                         OrdenesTrabajoScreen(

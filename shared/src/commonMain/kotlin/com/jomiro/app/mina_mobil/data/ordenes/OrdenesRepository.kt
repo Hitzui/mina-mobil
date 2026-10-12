@@ -39,10 +39,13 @@ class OrdenesRepository(
 ) {
     suspend fun opcionesMaterialProceso(ordenId: Long, procesoId: Long): OpcionesMaterialProceso {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        offlineSync.snapshot(session.userId)?.get("catalogs")?.jsonObject?.let { catalogs ->
-            val products = catalogs["products"]?.toString()?.let {
-                runCatching { ApiJson.instance.decodeFromString<List<ProductoMateriaDto>>(it) }.getOrNull()
-            }.orEmpty().map { it.toModel() }
+        offlineSync.offlineSnapshot(session.userId)?.let { snapshot ->
+            val catalogs = snapshot["catalogs"]?.jsonObject
+                ?: throw OrdenesException("La descarga local no incluye el catálogo de materiales.")
+            val products = runCatching {
+                ApiJson.instance.decodeFromString<List<ProductoMateriaDto>>(catalogs["products"]?.toString() ?: "[]")
+            }.getOrElse { throw OrdenesException("El catálogo local de materiales está dañado. Descargue los datos nuevamente.") }
+                .map { it.toModel() }
             return OpcionesMaterialProceso(
                 products.map { it.copy(existencia = existenciaLocal(session.userId, it)) },
                 kotlin.time.Clock.System.now().toString().take(10),
@@ -59,7 +62,7 @@ class OrdenesRepository(
 
     suspend fun listarMaterialesProceso(ordenId: Long, procesoId: Long): List<MaterialProcesoTrabajo> {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             return detalleLocal(session.userId, ordenId).procesos.firstOrNull { it.id == procesoId }?.materiales.orEmpty()
         }
         val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/materials") {
@@ -85,7 +88,7 @@ class OrdenesRepository(
             put("fecha", fecha); put("cantidad", cantidad)
             observaciones?.trim()?.takeIf(String::isNotBlank)?.let { put("observaciones", it) }
         }
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             val product = opcionesMaterialProceso(ordenId, procesoId).productos.firstOrNull { it.id == productoId }
                 ?: throw OrdenesException("El material no está disponible en la descarga local.")
             val available = product.existencia
@@ -119,7 +122,7 @@ class OrdenesRepository(
 
     suspend fun eliminarMaterialProceso(ordenId: Long, procesoId: Long, movement: MaterialProcesoTrabajo) {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             val payload = buildJsonObject {
                 put("order_id", ordenId); put("process_id", procesoId); put("movement_id", movement.id)
             }
@@ -155,23 +158,24 @@ class OrdenesRepository(
 
     suspend fun opcionesCostosProceso(ordenId: Long, procesoId: Long): OpcionesCostoProceso {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        offlineSync.snapshot(session.userId)?.get("catalogs")?.jsonObject?.let { catalogs ->
+        offlineSync.offlineSnapshot(session.userId)?.let { snapshot ->
+            val catalogs = snapshot["catalogs"]?.jsonObject
+                ?: throw OrdenesException("La descarga local no incluye las opciones de costos.")
             val categories = runCatching {
                 ApiJson.instance.decodeFromString<List<CategoriaCostoDto>>(catalogs["cost_categories"]?.toString() ?: "[]")
-            }.getOrDefault(emptyList()).map { CategoriaCostoOpcion(it.id, it.name) }
+            }.getOrElse { throw OrdenesException("Las categorías locales están dañadas. Descargue los datos nuevamente.") }
+                .map { CategoriaCostoOpcion(it.id, it.name) }
             val currencies = runCatching {
                 ApiJson.instance.decodeFromString<List<MonedaCostoDto>>(catalogs["currencies"]?.toString() ?: "[]")
-            }.getOrDefault(emptyList()).map { MonedaCostoOpcion(it.id, it.code, it.name, it.isBaseCurrency) }
-            if (categories.isNotEmpty() && currencies.isNotEmpty()) {
-                return OpcionesCostoProceso(categories, currencies, kotlin.time.Clock.System.now().toString().take(10))
+            }.getOrElse { throw OrdenesException("Las monedas locales están dañadas. Descargue los datos nuevamente.") }
+                .map { MonedaCostoOpcion(it.id, it.code, it.name, it.isBaseCurrency) }
+            if (categories.isEmpty() || currencies.isEmpty()) {
+                throw OrdenesException("La descarga local no incluye categorías o monedas para costos. Descargue los datos nuevamente.")
             }
+            return OpcionesCostoProceso(categories, currencies, kotlin.time.Clock.System.now().toString().take(10))
         }
-        val response = try {
-            client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/cost-options") {
-                headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
-            }
-        } catch (_: Exception) {
-            throw OrdenesException("La descarga local no incluye categorías o monedas para costos. Conéctese a internet y descargue los datos nuevamente.")
+        val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/cost-options") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
         }
         val body = response.bodyAsText()
         if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar las opciones de costos.")
@@ -181,7 +185,7 @@ class OrdenesRepository(
 
     suspend fun listarCostosProceso(ordenId: Long, procesoId: Long): List<CostoProcesoTrabajo> {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             return detalleLocal(session.userId, ordenId).procesos.firstOrNull { it.id == procesoId }?.costos.orEmpty()
         }
         val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/costs") {
@@ -213,7 +217,7 @@ class OrdenesRepository(
             put("cantidad", cantidad); put("costo_unitario", costoUnitario); put("moneda_id", monedaId)
             observaciones?.trim()?.takeIf(String::isNotBlank)?.let { put("observaciones", it) }
         }
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             val options = opcionesCostosProceso(ordenId, procesoId)
             val category = options.categorias.firstOrNull { it.id == categoriaId }?.nombre.orEmpty()
             val selectedCurrency = options.monedas.firstOrNull { it.id == monedaId }
@@ -253,7 +257,7 @@ class OrdenesRepository(
     suspend fun eliminarCostoProceso(ordenId: Long, procesoId: Long, costoId: Long) {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
         val payload = buildJsonObject { put("order_id", ordenId); put("process_id", procesoId); put("cost_id", costoId) }
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             offlineSync.enqueueOperation(session.userId, "cost.delete", payload, "process_cost_deleted") { id ->
                 buildJsonObject { put("id", costoId); put("process_id", procesoId); put("local_id", id) }
             }
@@ -268,7 +272,7 @@ class OrdenesRepository(
     suspend fun opcionesFormulario(): OpcionesFormularioOrden {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        offlineSync.snapshot(session.userId)?.let { snapshot ->
+        offlineSync.offlineSnapshot(session.userId)?.let { snapshot ->
             val clients = ApiJson.instance.decodeFromString<List<OpcionClienteOrdenDto>>(snapshot.getValue("clients").toString())
             val units = ApiJson.instance.decodeFromString<List<OpcionUnidadPesoDto>>(snapshot.getValue("catalogs").jsonObject.getValue("units").toString())
             return OpcionesOrdenDto(clients, units).toModel()
@@ -299,7 +303,7 @@ class OrdenesRepository(
     ): OrdenTrabajo {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             val operation = buildJsonObject {
                 put("cliente_id", clienteId)
                 put("fecha", fecha)
@@ -347,7 +351,7 @@ class OrdenesRepository(
 
     suspend fun opcionesEdicion(id: Long): FormularioEdicionOrden {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             val order = offlineOrder(session.userId, id) ?: throw OrdenesException("No se encontró la orden en la descarga local.")
             val options = opcionesFormulario()
             val detail = detalleLocal(session.userId, id)
@@ -376,7 +380,7 @@ class OrdenesRepository(
         tieneProcesos: Boolean,
     ): OrdenTrabajo {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             val previous = offlineOrder(session.userId, id) ?: throw OrdenesException("No se encontró la orden en la descarga local.")
             val clientName = opcionesFormulario().clientes.firstOrNull { it.id == clienteId }?.nombre
             val updated = previous.copy(cliente = clientName, fecha = if (tieneProcesos) previous.fecha else fecha,
@@ -418,7 +422,7 @@ class OrdenesRepository(
         fechaHasta: String? = null,
     ): PaginaOrdenes {
         val owner = sessions.current()?.userId
-        if (owner != null && offlineSync.downloaded(owner)) {
+        if (owner != null && offlineSync.isOfflineMode(owner)) {
             val orders = offlineOrders(owner).filter { order ->
                 (codigo.isNullOrBlank() || order.codigo.contains(codigo, ignoreCase = true)) &&
                     (clienteId == null || offlineClientId(owner, order.id) == clienteId) &&
@@ -434,7 +438,7 @@ class OrdenesRepository(
 
     suspend fun calendario(fechaDesde: String, fechaHasta: String): List<OrdenTrabajo> {
         val owner = sessions.current()?.userId
-        if (owner != null && offlineSync.downloaded(owner)) {
+        if (owner != null && offlineSync.isOfflineMode(owner)) {
             return offlineOrders(owner).filter { (it.fecha ?: "") in fechaDesde..fechaHasta }
         }
         val firstPage = consultar(
@@ -458,7 +462,7 @@ class OrdenesRepository(
     suspend fun detalle(id: Long): DetalleOrdenTrabajo {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        if (offlineSync.downloaded(session.userId)) return detalleLocal(session.userId, id)
+        if (offlineSync.isOfflineMode(session.userId)) return detalleLocal(session.userId, id)
         val endpoint = "${baseUrl.trimEnd('/')}/orders/$id"
         val response = client.get(endpoint) {
             headers {
@@ -479,7 +483,7 @@ class OrdenesRepository(
     suspend fun finalizar(id: Long) {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             val order = offlineOrder(session.userId, id) ?: throw OrdenesException("No se encontró la orden en la descarga local.")
             offlineSync.enqueueOperation(
                 session.userId, "order.finalize", buildJsonObject { put("order_id", id) }, "order", id,
@@ -505,7 +509,7 @@ class OrdenesRepository(
     suspend fun opcionesProceso(id: Long): List<EtapaOpcionProceso> {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        offlineSync.snapshot(session.userId)?.let { snapshot ->
+        offlineSync.offlineSnapshot(session.userId)?.let { snapshot ->
             return ApiJson.instance.decodeFromString<List<EtapaProcesoDto>>(
                 snapshot.getValue("catalogs").jsonObject.getValue("stages").toString(),
             ).map { it.toModel() }
@@ -538,7 +542,7 @@ class OrdenesRepository(
     ) {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             val processOptions = opcionesProceso(ordenId)
             val stage = processOptions.firstOrNull { it.id == etapaId }?.nombre ?: "Etapa"
             val payload = buildJsonObject {
@@ -584,7 +588,7 @@ class OrdenesRepository(
 
     suspend fun opcionesTrabajo(ordenId: Long, procesoId: Long): OpcionesTrabajoEmpleado {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        offlineSync.snapshot(session.userId)?.let { snapshot ->
+        offlineSync.offlineSnapshot(session.userId)?.let { snapshot ->
             val catalogs = snapshot.getValue("catalogs").jsonObject
             return OpcionesTrabajoDto(
                 ApiJson.instance.decodeFromString(catalogs.getValue("employees").toString()),
@@ -613,7 +617,7 @@ class OrdenesRepository(
         fecha: String,
     ): TarifaTrabajoEmpleado {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        offlineSync.snapshot(session.userId)?.let { snapshot ->
+        offlineSync.offlineSnapshot(session.userId)?.let { snapshot ->
             val catalogs = snapshot.getValue("catalogs").jsonObject
             val rates = ApiJson.instance.decodeFromString<List<OfflineEmployeeRateDto>>(catalogs.getValue("employee_rates").toString())
             val rate = rates.filter { it.employeeId == empleadoId && it.paymentTypeId == tipoPagoId && it.active }
@@ -660,7 +664,7 @@ class OrdenesRepository(
         observaciones: String,
     ) {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             val options = opcionesTrabajo(ordenId, procesoId)
             val employee = options.empleados.firstOrNull { it.id == empleadoId }?.nombre ?: "Empleado"
             val payment = options.tiposPago.firstOrNull { it.id == tipoPagoId }?.nombre ?: "Tipo de pago"
@@ -711,7 +715,7 @@ class OrdenesRepository(
 
     suspend fun opcionesEquipo(ordenId: Long, procesoId: Long): OpcionesEquipoProceso {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        offlineSync.snapshot(session.userId)?.let { snapshot ->
+        offlineSync.offlineSnapshot(session.userId)?.let { snapshot ->
             val equipment = ApiJson.instance.decodeFromString<List<EquipoOpcionDto>>(
                 snapshot.getValue("catalogs").jsonObject.getValue("equipment").toString(),
             )
@@ -738,7 +742,7 @@ class OrdenesRepository(
         fechaFin: String?,
     ): DepreciacionEquipoProceso {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        offlineSync.snapshot(session.userId)?.let { snapshot ->
+        offlineSync.offlineSnapshot(session.userId)?.let { snapshot ->
             val equipment = ApiJson.instance.decodeFromString<List<EquipoOpcionDto>>(
                 snapshot.getValue("catalogs").jsonObject.getValue("equipment").toString(),
             ).firstOrNull { it.id == equipoId } ?: throw OrdenesException("El equipo no está en la descarga local.")
@@ -782,7 +786,7 @@ class OrdenesRepository(
         observaciones: String,
     ) {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
-        if (offlineSync.downloaded(session.userId)) {
+        if (offlineSync.isOfflineMode(session.userId)) {
             val equipment = opcionesEquipo(ordenId, procesoId).equipos.firstOrNull { it.id == equipoId }
                 ?: throw OrdenesException("El equipo no está en la descarga local.")
             val estimate = depreciacionEquipo(ordenId, procesoId, equipoId, fechaInicio, fechaFin)

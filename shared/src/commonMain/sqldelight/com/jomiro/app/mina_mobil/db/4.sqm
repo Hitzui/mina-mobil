@@ -1,0 +1,4 @@
+CREATE TABLE mobile_connection_mode (
+    owner_id INTEGER NOT NULL PRIMARY KEY,
+    mode TEXT NOT NULL CHECK (mode IN ('online', 'offline'))
+);
