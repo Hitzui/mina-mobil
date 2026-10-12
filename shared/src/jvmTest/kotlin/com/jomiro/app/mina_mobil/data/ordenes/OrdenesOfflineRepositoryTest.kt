@@ -21,7 +21,7 @@ class OrdenesOfflineRepositoryTest {
         sessions.save(
             UserSession("offline-token", null, 42, "Usuario", "offline@test.local", emptyList(), emptyList(), 1, "Caja"),
         )
-        val body = """{"data":{"clients":[{"id":2,"name":"Cliente local","phone":null,"address":null,"is_active":true}],"employees":[],"orders":[],"catalogs":{"units":[{"id":3,"name":"Tonelada"}],"stages":[{"id":4,"name":"Trituración","order":1}],"employees":[],"payment_types":[],"equipment":[],"employee_rates":[],"exchange_rates":[],"cost_categories":[{"id":6,"name":"Energía"}],"currencies":[{"id":7,"code":"NIO","name":"Córdoba","is_base_currency":true}]}}}"""
+        val body = """{"data":{"clients":[{"id":2,"name":"Cliente local","phone":null,"address":null,"is_active":true}],"employees":[],"orders":[],"catalogs":{"units":[{"id":3,"name":"Tonelada"}],"stages":[{"id":4,"name":"Trituración","order":1}],"employees":[],"payment_types":[],"equipment":[],"employee_rates":[],"exchange_rates":[],"cost_categories":[{"id":6,"name":"Energía"}],"currencies":[{"id":7,"code":"NIO","name":"Córdoba","is_base_currency":true}],"products":[{"id":8,"code":"MAT-000008","name":"Cemento","unit":"kg","stock":12,"average_cost":3.5}]}}}"""
         database.clientCacheQueries.saveOfflineSnapshot(42, body, "2026-10-11T00:00:00Z")
         val client = HttpClient(CIO)
         val sync = OfflineSyncRepository(client, "http://localhost/api/v1", sessions, database)
@@ -64,7 +64,28 @@ class OrdenesOfflineRepositoryTest {
         assertEquals("Energía corregida", kotlinx.coroutines.runBlocking { repository.listarCostosProceso(order.id, process.id).single().descripcion })
         kotlinx.coroutines.runBlocking { repository.eliminarCostoProceso(order.id, process.id, cost.id) }
         assertEquals(emptyList(), kotlinx.coroutines.runBlocking { repository.listarCostosProceso(order.id, process.id) })
-        assertEquals(5, sync.pendingCount(42))
+        val materialOptions = kotlinx.coroutines.runBlocking { repository.opcionesMaterialProceso(order.id, process.id) }
+        assertEquals("Cemento", materialOptions.productos.single().nombre)
+        assertEquals(12.0, materialOptions.productos.single().existencia)
+        val material = kotlinx.coroutines.runBlocking {
+            repository.registrarMaterialProceso(order.id, process.id, 8, "2026-10-11", 4.0, "Mezcla")
+        }
+        assertTrue(material.id < 0)
+        assertEquals(14.0, material.totalNio)
+        assertEquals(material.id, kotlinx.coroutines.runBlocking { repository.listarMaterialesProceso(order.id, process.id).single().id })
+        val afterConsumption = kotlinx.coroutines.runBlocking { repository.opcionesMaterialProceso(order.id, process.id) }
+        assertEquals(8.0, afterConsumption.productos.single().existencia)
+        val overdraw = runCatching {
+            kotlinx.coroutines.runBlocking {
+                repository.registrarMaterialProceso(order.id, process.id, 8, "2026-10-11", 9.0, null)
+            }
+        }.exceptionOrNull()
+        assertTrue(overdraw?.message?.contains("No hay suficiente material") == true)
+        kotlinx.coroutines.runBlocking { repository.eliminarMaterialProceso(order.id, process.id, material) }
+        assertEquals(emptyList(), kotlinx.coroutines.runBlocking { repository.listarMaterialesProceso(order.id, process.id) })
+        val afterDelete = kotlinx.coroutines.runBlocking { repository.opcionesMaterialProceso(order.id, process.id) }
+        assertEquals(12.0, afterDelete.productos.single().existencia)
+        assertEquals(7, sync.pendingCount(42))
 
         client.close()
         driver.close()

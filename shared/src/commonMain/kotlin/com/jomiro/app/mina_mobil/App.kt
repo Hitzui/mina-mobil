@@ -102,6 +102,9 @@ fun App() {
                     canCreateProcessCosts = "movimientos_costo.create" in session.permissions,
                     canEditProcessCosts = "movimientos_costo.edit" in session.permissions,
                     canDeleteProcessCosts = "movimientos_costo.delete" in session.permissions,
+                    canViewProcessMaterials = "movimientos_inventario.view" in session.permissions,
+                    canCreateProcessMaterials = "movimientos_inventario.create" in session.permissions,
+                    canDeleteProcessMaterials = "movimientos_inventario.delete" in session.permissions,
                     onLogout = viewModel::logout,
                 )
             } else {
@@ -253,6 +256,9 @@ private fun SignedInScreen(
     canCreateProcessCosts: Boolean,
     canEditProcessCosts: Boolean,
     canDeleteProcessCosts: Boolean,
+    canViewProcessMaterials: Boolean,
+    canCreateProcessMaterials: Boolean,
+    canDeleteProcessMaterials: Boolean,
     onLogout: () -> Unit,
 ) {
     val offlineSyncRepository: OfflineSyncRepository = koinInject()
@@ -268,6 +274,7 @@ private fun SignedInScreen(
     var equipmentProcessId by remember { mutableStateOf<Long?>(null) }
     var workProcessId by remember { mutableStateOf<Long?>(null) }
     var costProcessId by remember { mutableStateOf<Long?>(null) }
+    var materialsProcessId by remember { mutableStateOf<Long?>(null) }
     var editingOrder by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
@@ -304,6 +311,7 @@ private fun SignedInScreen(
                                 equipmentProcessId = null
                                 workProcessId = null
                                 costProcessId = null
+                                materialsProcessId = null
                                 editingOrder = false
                                 coroutineScope.launch { drawerState.close() }
                             },
@@ -336,6 +344,8 @@ private fun SignedInScreen(
                             when {
                                 selectedSection != AppSection.WORK_ORDERS || selectedOrderId == null -> selectedSection.title
                                 workProcessId != null -> "Agregar trabajo"
+                                materialsProcessId != null -> "Materia prima consumida"
+                                costProcessId != null -> "Costos del proceso"
                                 editingOrder -> "Editar orden"
                                 equipmentProcessId != null -> "Asignar equipo"
                                 selectedOrderSection != null -> selectedOrderSection!!.titulo
@@ -349,6 +359,8 @@ private fun SignedInScreen(
                         if (selectedSection == AppSection.WORK_ORDERS && selectedOrderId != null) {
                             IconButton(onClick = {
                                 if (workProcessId != null) workProcessId = null
+                                else if (materialsProcessId != null) materialsProcessId = null
+                                else if (costProcessId != null) costProcessId = null
                                 else if (editingOrder) editingOrder = false
                                 else if (equipmentProcessId != null) equipmentProcessId = null
                                 else if (selectedOrderSection != null) selectedOrderSection = null
@@ -421,6 +433,8 @@ private fun SignedInScreen(
                                 selectedOrderSection = null
                                 equipmentProcessId = null
                                 workProcessId = null
+                                costProcessId = null
+                                materialsProcessId = null
                                 editingOrder = false
                                 selectedOrderId = it
                             },
@@ -428,6 +442,8 @@ private fun SignedInScreen(
                                 selectedOrderSection = null
                                 equipmentProcessId = null
                                 workProcessId = null
+                                costProcessId = null
+                                materialsProcessId = null
                                 selectedOrderId = it
                                 editingOrder = true
                             },
@@ -446,17 +462,23 @@ private fun SignedInScreen(
                             canCreateProcessCosts = canCreateProcessCosts,
                             canEditProcessCosts = canEditProcessCosts,
                             canDeleteProcessCosts = canDeleteProcessCosts,
+                            canViewProcessMaterials = canViewProcessMaterials,
+                            canCreateProcessMaterials = canCreateProcessMaterials,
+                            canDeleteProcessMaterials = canDeleteProcessMaterials,
                             equipmentProcessId = equipmentProcessId,
                             workProcessId = workProcessId,
                             costProcessId = costProcessId,
+                            materialsProcessId = materialsProcessId,
                             editingOrder = editingOrder,
                             onAssignEquipment = { equipmentProcessId = it },
                             onAddEmployeeWork = { workProcessId = it },
                             onManageProcessCosts = { costProcessId = it },
+                            onManageProcessMaterials = { materialsProcessId = it },
                             onEditOrder = { editingOrder = true },
                             onBackFromEquipment = { equipmentProcessId = null },
                             onBackFromEmployeeWork = { workProcessId = null },
                             onBackFromProcessCosts = { costProcessId = null },
+                            onBackFromProcessMaterials = { materialsProcessId = null },
                             onBackFromOrderEdit = { editingOrder = false },
                             seccion = selectedOrderSection,
                             onSelectSection = { selectedOrderSection = it },

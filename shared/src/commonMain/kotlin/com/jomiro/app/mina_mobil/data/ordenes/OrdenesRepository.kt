@@ -37,6 +37,122 @@ class OrdenesRepository(
     private val sessions: SessionRepository,
     private val offlineSync: OfflineSyncRepository,
 ) {
+    suspend fun opcionesMaterialProceso(ordenId: Long, procesoId: Long): OpcionesMaterialProceso {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        offlineSync.snapshot(session.userId)?.get("catalogs")?.jsonObject?.let { catalogs ->
+            val products = catalogs["products"]?.toString()?.let {
+                runCatching { ApiJson.instance.decodeFromString<List<ProductoMateriaDto>>(it) }.getOrNull()
+            }.orEmpty().map { it.toModel() }
+            return OpcionesMaterialProceso(
+                products.map { it.copy(existencia = existenciaLocal(session.userId, it)) },
+                kotlin.time.Clock.System.now().toString().take(10),
+            )
+        }
+        val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/material-options") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar los materiales disponibles.")
+        return runCatching { ApiJson.instance.decodeFromString<OpcionesMaterialesResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("No se pudieron interpretar los materiales disponibles.") }
+    }
+
+    suspend fun listarMaterialesProceso(ordenId: Long, procesoId: Long): List<MaterialProcesoTrabajo> {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.downloaded(session.userId)) {
+            return detalleLocal(session.userId, ordenId).procesos.firstOrNull { it.id == procesoId }?.materiales.orEmpty()
+        }
+        val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/materials") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar los consumos de materia prima.")
+        return runCatching { ApiJson.instance.decodeFromString<MaterialesProcesoResponseDto>(body).data.materials.map { it.toModel() } }
+            .getOrElse { throw OrdenesException("No se pudieron interpretar los consumos del proceso.") }
+    }
+
+    suspend fun registrarMaterialProceso(
+        ordenId: Long,
+        procesoId: Long,
+        productoId: Long,
+        fecha: String,
+        cantidad: Double,
+        observaciones: String?,
+    ): MaterialProcesoTrabajo {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val payload = buildJsonObject {
+            put("order_id", ordenId); put("process_id", procesoId); put("producto_id", productoId)
+            put("fecha", fecha); put("cantidad", cantidad)
+            observaciones?.trim()?.takeIf(String::isNotBlank)?.let { put("observaciones", it) }
+        }
+        if (offlineSync.downloaded(session.userId)) {
+            val product = opcionesMaterialProceso(ordenId, procesoId).productos.firstOrNull { it.id == productoId }
+                ?: throw OrdenesException("El material no está disponible en la descarga local.")
+            val available = product.existencia
+            if (cantidad > available + 0.0005) {
+                throw OrdenesException("No hay suficiente material en el almacén: se piden ${cantidad.displayMaterial()} y hay ${available.displayMaterial()} ${product.unidad}.")
+            }
+            val movement = MaterialProcesoTrabajo(
+                id = 0L, productoId = product.id, producto = product.nombre, unidad = product.unidad,
+                fecha = fecha, cantidad = cantidad, costoUnitario = product.costoPromedio,
+                totalNio = (cantidad * product.costoPromedio).roundMoney(), observaciones = observaciones,
+            )
+            val localId = offlineSync.enqueueOperation(session.userId, "material.consume", payload, "process_material") { id ->
+                movement.copy(id = id).toOfflineJson(procesoId).let { localPayload ->
+                    kotlinx.serialization.json.buildJsonObject {
+                        localPayload.forEach { (key, value) -> put(key, value) }
+                        put("order_id", ordenId)
+                    }
+                }
+            }
+            return movement.copy(id = localId)
+        }
+        val response = client.post("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/materials") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+            contentType(ContentType.Application.Json); setBody(payload)
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudo registrar el consumo de materia prima.")
+        return runCatching { ApiJson.instance.decodeFromString<MaterialProcesoResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("No se pudo interpretar el consumo guardado.") }
+    }
+
+    suspend fun eliminarMaterialProceso(ordenId: Long, procesoId: Long, movement: MaterialProcesoTrabajo) {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.downloaded(session.userId)) {
+            val payload = buildJsonObject {
+                put("order_id", ordenId); put("process_id", procesoId); put("movement_id", movement.id)
+            }
+            offlineSync.enqueueOperation(session.userId, "material.delete", payload, "process_material_deleted") { localId ->
+                buildJsonObject {
+                    put("id", movement.id); put("process_id", procesoId); put("order_id", ordenId)
+                    put("product_id", movement.productoId); put("quantity", movement.cantidad)
+                    put("local_delete_id", localId); put("is_local", movement.id < 0)
+                }
+            }
+            return
+        }
+        val response = client.delete("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/materials/${movement.id}") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        if (response.status.value !in 200..299) throw apiException(response.bodyAsText(), "No se pudo eliminar el consumo.")
+    }
+
+    private fun existenciaLocal(ownerId: Long, product: ProductoMateriaPrima): Double {
+        val entities = offlineSync.localEntities(ownerId)
+        val deletedIds = entities.filter { it.type == "process_material_deleted" }
+            .mapNotNull { it.payload["id"]?.jsonPrimitive?.content?.toLongOrNull() }.toSet()
+        val consumed = entities.filter { it.type == "process_material" }
+            .filter { it.payload["product_id"]?.jsonPrimitive?.content?.toLongOrNull() == product.id }
+            .filter { it.id !in deletedIds }
+            .sumOf { it.payload["quantity"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0 }
+        val returned = entities.filter { it.type == "process_material_deleted" }
+            .filter { it.payload["product_id"]?.jsonPrimitive?.content?.toLongOrNull() == product.id }
+            .filter { it.payload["is_local"]?.jsonPrimitive?.content != "true" }
+            .sumOf { it.payload["quantity"]?.jsonPrimitive?.content?.toDoubleOrNull() ?: 0.0 }
+        return (product.existencia - consumed + returned).coerceAtLeast(0.0)
+    }
+
     suspend fun opcionesCostosProceso(ordenId: Long, procesoId: Long): OpcionesCostoProceso {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
         offlineSync.snapshot(session.userId)?.get("catalogs")?.jsonObject?.let { catalogs ->
@@ -833,9 +949,19 @@ class OrdenesRepository(
         }
         val deletedCostIds = localCostRows.filter { it.type == "process_cost_deleted" }
             .mapNotNull { it.payload["id"]?.jsonPrimitive?.content?.toLongOrNull() }.toSet()
+        val localMaterialRows = local.filter { it.type == "process_material" || it.type == "process_material_deleted" }
+            .filter { it.payload["process_id"]?.jsonPrimitive?.content?.toLongOrNull() in
+                (orderDto.processes + localProcesses).map { process -> process.id } }
+        val materialOverrides = localMaterialRows.filter { it.type == "process_material" }.mapNotNull { row ->
+            runCatching { ApiJson.instance.decodeFromString<ProcessMaterialDto>(row.payload.toString()) }.getOrNull()
+        }
+        val deletedMaterialIds = localMaterialRows.filter { it.type == "process_material_deleted" }
+            .mapNotNull { it.payload["id"]?.jsonPrimitive?.content?.toLongOrNull() }.toSet()
         val mergedProcesses = (orderDto.processes + localProcesses).distinctBy { it.id }.map { process ->
             process.copy(costs = (process.costs.filterNot { it.id in deletedCostIds || costOverrides.any { cost -> cost.id == it.id } } +
-                costOverrides.filter { it.processId == process.id && it.id !in deletedCostIds }).distinctBy { it.id })
+                costOverrides.filter { it.processId == process.id && it.id !in deletedCostIds }).distinctBy { it.id },
+                materials = (process.materials.filterNot { it.id in deletedMaterialIds || materialOverrides.any { material -> material.id == it.id } } +
+                    materialOverrides.filter { it.processId == process.id && it.id !in deletedMaterialIds }).distinctBy { it.id })
         }
         return orderDto.copy(
             processes = mergedProcesses,
@@ -878,6 +1004,15 @@ private fun CostoProcesoTrabajo.toOfflineJson(processId: Long): JsonObject = bui
     put("total", total); put("currency_id", monedaId); put("currency", moneda); totalNio?.let { put("total_nio", it) }
     observaciones?.let { put("observations", it) }
 }
+
+private fun MaterialProcesoTrabajo.toOfflineJson(processId: Long): JsonObject = buildJsonObject {
+    put("id", id); put("process_id", processId); put("product_id", productoId); put("product", producto)
+    unidad?.let { put("unit", it) }; put("date", fecha); put("quantity", cantidad)
+    put("unit_cost", costoUnitario); totalNio?.let { put("total_nio", it) }
+    observaciones?.let { put("observations", it) }
+}
+
+private fun Double.displayMaterial(): String = ((this * 1000).toLong() / 1000.0).toString()
 
 private fun Double.roundMoney(): Double = (this * 100).roundToInt() / 100.0
 
@@ -937,6 +1072,56 @@ private data class CostosProcesoDto(val costs: List<ProcessCostDto> = emptyList(
 
 @Serializable
 private data class ProcessCostResponseDto(val data: ProcessCostDto)
+
+@Serializable
+private data class OpcionesMaterialesResponseDto(val data: OpcionesMaterialesDto)
+
+@Serializable
+private data class OpcionesMaterialesDto(
+    val products: List<ProductoMateriaDto> = emptyList(),
+    val date: String,
+)
+
+private fun OpcionesMaterialesDto.toModel() = OpcionesMaterialProceso(products.map { it.toModel() }, date)
+
+@Serializable
+private data class MaterialesProcesoResponseDto(val data: MaterialesProcesoDto)
+
+@Serializable
+private data class MaterialesProcesoDto(val materials: List<ProcessMaterialDto> = emptyList())
+
+@Serializable
+private data class MaterialProcesoResponseDto(val data: ProcessMaterialDto)
+
+@Serializable
+private data class ProductoMateriaDto(
+    val id: Long,
+    val code: String? = null,
+    val name: String,
+    val unit: String? = null,
+    val stock: Double = 0.0,
+    @SerialName("average_cost") val averageCost: Double = 0.0,
+)
+
+private fun ProductoMateriaDto.toModel() = ProductoMateriaPrima(id, code.orEmpty(), name, unit.orEmpty(), stock, averageCost)
+
+@Serializable
+internal data class ProcessMaterialDto(
+    val id: Long,
+    @SerialName("process_id") val processId: Long = 0,
+    @SerialName("product_id") val productId: Long,
+    val product: String,
+    val unit: String? = null,
+    val date: String,
+    val quantity: Double,
+    @SerialName("unit_cost") val unitCost: Double,
+    @SerialName("total_nio") val totalNio: Double? = null,
+    val observations: String? = null,
+)
+
+private fun ProcessMaterialDto.toModel() = MaterialProcesoTrabajo(
+    id, productId, product, unit, date, quantity, unitCost, totalNio, observations,
+)
 
 @Serializable
 internal data class ProcessCostDto(
@@ -1256,6 +1441,7 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
             pesoSalida = process.outputWeight?.contentOrNull?.toDoubleOrNull(),
             observaciones = process.observations,
             costos = process.costs.map { it.toModel() },
+            materiales = process.materials.map { it.toModel() },
         )
     },
     costos = costs.map { cost ->
@@ -1460,6 +1646,7 @@ internal data class ProcesoOrdenDto(
     @SerialName("output_weight") val outputWeight: JsonPrimitive? = null,
     val observations: String? = null,
     val costs: List<ProcessCostDto> = emptyList(),
+    val materials: List<ProcessMaterialDto> = emptyList(),
 )
 
 @Serializable

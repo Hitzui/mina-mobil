@@ -110,7 +110,31 @@ data class ProcesoOrdenTrabajo(
     val pesoSalida: Double?,
     val observaciones: String?,
     val costos: List<CostoProcesoTrabajo> = emptyList(),
+    val materiales: List<MaterialProcesoTrabajo> = emptyList(),
 )
+
+data class MaterialProcesoTrabajo(
+    val id: Long,
+    val productoId: Long,
+    val producto: String,
+    val unidad: String?,
+    val fecha: String,
+    val cantidad: Double,
+    val costoUnitario: Double,
+    val totalNio: Double?,
+    val observaciones: String?,
+)
+
+data class ProductoMateriaPrima(
+    val id: Long,
+    val codigo: String,
+    val nombre: String,
+    val unidad: String,
+    val existencia: Double,
+    val costoPromedio: Double,
+)
+
+data class OpcionesMaterialProceso(val productos: List<ProductoMateriaPrima>, val fecha: String)
 
 data class CostoProcesoTrabajo(
     val id: Long,
