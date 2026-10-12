@@ -156,16 +156,22 @@ class OrdenesRepository(
     suspend fun opcionesCostosProceso(ordenId: Long, procesoId: Long): OpcionesCostoProceso {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
         offlineSync.snapshot(session.userId)?.get("catalogs")?.jsonObject?.let { catalogs ->
-            return OpcionesCostoProceso(
+            val categories = runCatching {
                 ApiJson.instance.decodeFromString<List<CategoriaCostoDto>>(catalogs["cost_categories"]?.toString() ?: "[]")
-                    .map { CategoriaCostoOpcion(it.id, it.name) },
+            }.getOrDefault(emptyList()).map { CategoriaCostoOpcion(it.id, it.name) }
+            val currencies = runCatching {
                 ApiJson.instance.decodeFromString<List<MonedaCostoDto>>(catalogs["currencies"]?.toString() ?: "[]")
-                    .map { MonedaCostoOpcion(it.id, it.code, it.name, it.isBaseCurrency) },
-                kotlin.time.Clock.System.now().toString().take(10),
-            )
+            }.getOrDefault(emptyList()).map { MonedaCostoOpcion(it.id, it.code, it.name, it.isBaseCurrency) }
+            if (categories.isNotEmpty() && currencies.isNotEmpty()) {
+                return OpcionesCostoProceso(categories, currencies, kotlin.time.Clock.System.now().toString().take(10))
+            }
         }
-        val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/cost-options") {
-            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        val response = try {
+            client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/cost-options") {
+                headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+            }
+        } catch (_: Exception) {
+            throw OrdenesException("La descarga local no incluye categorías o monedas para costos. Conéctese a internet y descargue los datos nuevamente.")
         }
         val body = response.bodyAsText()
         if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar las opciones de costos.")

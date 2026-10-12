@@ -1,14 +1,13 @@
 package com.jomiro.app.mina_mobil.screen.ordenes.listado
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,8 +18,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -72,6 +69,12 @@ fun CostosProcesoScreen(
     var editing by remember { mutableStateOf<CostoProcesoTrabajo?>(null) }
     var creating by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf<CostoProcesoTrabajo?>(null) }
+    var showCategoryPicker by remember { mutableStateOf(false) }
+    var showCurrencyPicker by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
+    var formCategoryId by remember { mutableStateOf<Long?>(null) }
+    var formCurrencyId by remember { mutableStateOf<Long?>(null) }
+    var formDate by remember { mutableStateOf("") }
 
     fun load() {
         scope.launch {
@@ -92,14 +95,19 @@ fun CostosProcesoScreen(
     LaunchedEffect(ordenId, process.id) { load() }
 
     if (creating || editing != null) {
-        CostFormDialog(
+        CostFormScreen(
             initial = editing,
             categories = categories,
             currencies = currencies,
-            defaultDate = defaultDate,
+            categoryId = formCategoryId,
+            currencyId = formCurrencyId,
+            date = formDate,
             saving = saving,
             error = error,
             onDismiss = { if (!saving) { creating = false; editing = null; error = null } },
+            onPickCategory = { showCategoryPicker = true },
+            onPickCurrency = { showCurrencyPicker = true },
+            onPickDate = { showDatePicker = true },
             onSave = { categoryId, date, description, quantity, unitCost, currencyId, observations ->
                 scope.launch {
                     saving = true
@@ -117,6 +125,90 @@ fun CostosProcesoScreen(
                     saving = false
                 }
             },
+            modifier = modifier,
+        )
+    } else {
+        Column(
+            modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onBack) { Text("‹ Volver", color = CostTeal) }
+                Column(Modifier.weight(1f)) {
+                    Text("Costos del proceso", color = CostInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                    Text("${process.codigo} · ${process.etapa.orEmpty()}", color = CostMuted, fontSize = 13.sp)
+                }
+                if (canCreate && process.estado != "Finalizado" && process.estado != "Cancelado") {
+                    Button(onClick = {
+                        formCategoryId = categories.firstOrNull()?.id
+                        formCurrencyId = currencies.firstOrNull()?.id
+                        formDate = defaultDate
+                        creating = true
+                    }, colors = ButtonDefaults.buttonColors(containerColor = CostTeal)) {
+                        Text("+ Registrar")
+                    }
+                }
+            }
+            Surface(color = Color(0xFFF8F9FA), shape = RoundedCornerShape(12.dp)) {
+                Text(
+                    "Aquí van los consumos de este proceso: energía, agua y demás conceptos. La mano de obra, la depreciación y la materia prima no se registran aquí: las calcula el sistema desde los trabajos de empleados, los equipos asignados y el almacén.",
+                    modifier = Modifier.padding(14.dp), color = CostMuted, fontSize = 13.sp,
+                )
+            }
+            error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp) }
+            when {
+                loading -> CircularProgressIndicator(color = CostTeal, modifier = Modifier.align(Alignment.CenterHorizontally).padding(24.dp))
+                costs.isEmpty() -> Text("No hay costos registrados en este proceso.", color = CostMuted, modifier = Modifier.padding(vertical = 16.dp))
+                else -> costs.forEach { cost ->
+                    CostCard(
+                        cost = cost,
+                        canEdit = canEdit,
+                        canDelete = canDelete,
+                        onEdit = {
+                            formCategoryId = cost.categoriaId
+                            formCurrencyId = cost.monedaId
+                            formDate = cost.fecha.orEmpty()
+                            editing = cost
+                        },
+                        onDelete = { deleting = cost },
+                    )
+                }
+            }
+        }
+    }
+
+    if (showCategoryPicker) {
+        CostOptionPicker(
+            title = "Seleccionar categoría",
+            options = categories.map { it.id to it.nombre },
+            selectedId = formCategoryId,
+            onSelect = { id ->
+                formCategoryId = id
+                showCategoryPicker = false
+            },
+            onDismiss = { showCategoryPicker = false },
+        )
+    }
+    if (showCurrencyPicker) {
+        CostOptionPicker(
+            title = "Seleccionar moneda",
+            options = currencies.map { it.id to "${it.codigo} · ${it.nombre}" },
+            selectedId = formCurrencyId,
+            onSelect = { id ->
+                formCurrencyId = id
+                showCurrencyPicker = false
+            },
+            onDismiss = { showCurrencyPicker = false },
+        )
+    }
+    if (showDatePicker) {
+        DateSelectionDialog(
+            initialDate = formDate,
+            onSelect = { selected ->
+                formDate = selected.toString()
+                showDatePicker = false
+            },
+            onDismiss = { showDatePicker = false },
         )
     }
 
@@ -140,45 +232,6 @@ fun CostosProcesoScreen(
         )
     }
 
-    Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹ Volver", color = CostTeal) }
-            Column(Modifier.weight(1f)) {
-                Text("Costos del proceso", color = CostInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Text("${process.codigo} · ${process.etapa.orEmpty()}", color = CostMuted, fontSize = 13.sp)
-            }
-            if (canCreate && process.estado != "Finalizado" && process.estado != "Cancelado") {
-                Button(onClick = { error = null; creating = true }, colors = ButtonDefaults.buttonColors(containerColor = CostTeal)) {
-                    Text("+ Registrar")
-                }
-            }
-        }
-        Surface(color = Color(0xFFF8F9FA), shape = RoundedCornerShape(12.dp)) {
-            Text(
-                "Aquí van los consumos de este proceso: energía, agua y demás conceptos. La mano de obra, la depreciación y la materia prima no se registran aquí: las calcula el sistema desde los trabajos de empleados, los equipos asignados y el almacén.",
-                modifier = Modifier.padding(14.dp), color = CostMuted, fontSize = 13.sp,
-            )
-        }
-        error?.takeIf { !creating && editing == null }?.let {
-            Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp)
-        }
-        when {
-            loading -> CircularProgressIndicator(color = CostTeal, modifier = Modifier.align(Alignment.CenterHorizontally).padding(24.dp))
-            costs.isEmpty() -> Text("No hay costos registrados en este proceso.", color = CostMuted, modifier = Modifier.padding(vertical = 16.dp))
-            else -> costs.forEach { cost ->
-                CostCard(
-                    cost = cost,
-                    canEdit = canEdit,
-                    canDelete = canDelete,
-                    onEdit = { error = null; editing = cost },
-                    onDelete = { deleting = cost },
-                )
-            }
-        }
-    }
 }
 
 @Composable
@@ -213,67 +266,114 @@ private fun CostCard(
 }
 
 @Composable
-private fun CostFormDialog(
+private fun CostFormScreen(
     initial: CostoProcesoTrabajo?,
     categories: List<CategoriaCostoOpcion>,
     currencies: List<MonedaCostoOpcion>,
-    defaultDate: String,
+    categoryId: Long?,
+    currencyId: Long?,
+    date: String,
     saving: Boolean,
     error: String?,
     onDismiss: () -> Unit,
+    onPickCategory: () -> Unit,
+    onPickCurrency: () -> Unit,
+    onPickDate: () -> Unit,
     onSave: (Long, String, String, Double, Double, Long, String?) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    var categoryId by remember(initial?.id) { mutableStateOf(initial?.categoriaId ?: categories.firstOrNull()?.id) }
-    var currencyId by remember(initial?.id) { mutableStateOf(initial?.monedaId ?: currencies.firstOrNull()?.id) }
-    var date by remember(initial?.id) { mutableStateOf(initial?.fecha ?: defaultDate) }
     var description by remember(initial?.id) { mutableStateOf(initial?.descripcion.orEmpty()) }
     var quantity by remember(initial?.id) { mutableStateOf(initial?.cantidad?.toString() ?: "1") }
     var unitCost by remember(initial?.id) { mutableStateOf(initial?.costoUnitario?.toString().orEmpty()) }
     var observations by remember(initial?.id) { mutableStateOf(initial?.observaciones.orEmpty()) }
-    var menu by remember { mutableStateOf<String?>(null) }
     val selectedCategory = categories.firstOrNull { it.id == categoryId }
     val selectedCurrency = currencies.firstOrNull { it.id == currencyId }
     val quantityNumber = quantity.toDoubleOrNull()
     val unitCostNumber = unitCost.toDoubleOrNull()
     val valid = categoryId != null && currencyId != null && date.length >= 10 && description.isNotBlank() &&
         quantityNumber != null && quantityNumber > 0 && unitCostNumber != null && unitCostNumber >= 0
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Registrar costo" else "Editar costo") },
-        text = {
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SelectCostField("Categoría", selectedCategory?.nombre ?: "Seleccione", menu == "category", { menu = if (menu == "category") null else "category" }) {
-                    categories.forEach { option -> DropdownMenuItem(text = { Text(option.nombre) }, onClick = { categoryId = option.id; menu = null }) }
-                }
-                OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Fecha (AAAA-MM-DD)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = description, onValueChange = { if (it.length <= 255) description = it }, label = { Text("Descripción") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(value = quantity, onValueChange = { quantity = it }, label = { Text("Cantidad") }, singleLine = true, modifier = Modifier.weight(1f))
-                    OutlinedTextField(value = unitCost, onValueChange = { unitCost = it }, label = { Text("Costo unitario") }, singleLine = true, modifier = Modifier.weight(1f))
-                }
-                SelectCostField("Moneda", selectedCurrency?.let { "${it.codigo} · ${it.nombre}" } ?: "Seleccione", menu == "currency", { menu = if (menu == "currency") null else "currency" }) {
-                    currencies.forEach { option -> DropdownMenuItem(text = { Text("${option.codigo} · ${option.nombre}") }, onClick = { currencyId = option.id; menu = null }) }
-                }
-                Text("Total estimado: ${selectedCurrency?.codigo.orEmpty()} ${((quantityNumber ?: 0.0) * (unitCostNumber ?: 0.0)).displayCost()}", color = CostTeal, fontWeight = FontWeight.SemiBold)
-                OutlinedTextField(value = observations, onValueChange = { observations = it }, label = { Text("Observaciones") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3)
-                error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 12.sp) }
+    Column(
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(enabled = !saving, onClick = onDismiss) { Text("‹ Volver", color = CostTeal) }
+            Text(if (initial == null) "Registrar costo" else "Editar costo", color = CostInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+        }
+        CostSelectButton("Categoría", selectedCategory?.nombre ?: "Seleccionar categoría", onPickCategory)
+        CostSelectButton("Fecha", date.ifBlank { "Seleccionar fecha" }, onPickDate)
+        OutlinedTextField(
+            value = description,
+            onValueChange = { if (it.length <= 255) description = it },
+            label = { Text("Descripción") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value = quantity, onValueChange = { quantity = it }, label = { Text("Cantidad") }, singleLine = true, modifier = Modifier.weight(1f))
+            OutlinedTextField(value = unitCost, onValueChange = { unitCost = it }, label = { Text("Costo unitario") }, singleLine = true, modifier = Modifier.weight(1f))
+        }
+        CostSelectButton("Moneda", selectedCurrency?.let { "${it.codigo} · ${it.nombre}" } ?: "Seleccionar moneda", onPickCurrency)
+        Text("Total estimado: ${selectedCurrency?.codigo.orEmpty()} ${((quantityNumber ?: 0.0) * (unitCostNumber ?: 0.0)).displayCost()}", color = CostTeal, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(value = observations, onValueChange = { observations = it }, label = { Text("Observaciones") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
+        error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
+            TextButton(enabled = !saving, onClick = onDismiss) { Text("Cancelar", color = CostMuted) }
+            Button(
+                enabled = valid && !saving,
+                onClick = {
+                    onSave(categoryId!!, date, description, quantityNumber!!, unitCostNumber!!, currencyId!!, observations.takeIf(String::isNotBlank))
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = CostTeal),
+            ) {
+                if (saving) CircularProgressIndicator(modifier = Modifier.height(18.dp), strokeWidth = 2.dp, color = Color.White)
+                else Text("Guardar")
             }
-        },
-        confirmButton = {
-            TextButton(enabled = valid && !saving, onClick = {
-                onSave(categoryId!!, date, description, quantityNumber!!, unitCostNumber!!, currencyId!!, observations.takeIf(String::isNotBlank))
-            }) { if (saving) CircularProgressIndicator(modifier = Modifier.height(18.dp), strokeWidth = 2.dp) else Text("Guardar", color = CostTeal) }
-        },
-        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text("Cancelar") } },
-    )
+        }
+    }
 }
 
 @Composable
-private fun SelectCostField(label: String, value: String, expanded: Boolean, onClick: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Column {
-        OutlinedTextField(value = value, onValueChange = {}, readOnly = true, label = { Text(label) }, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick))
-        DropdownMenu(expanded = expanded, onDismissRequest = onClick, content = content)
+private fun CostSelectButton(label: String, value: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().height(58.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = CostInk),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Column(Modifier.weight(1f)) {
+                Text(label, color = CostMuted, fontSize = 11.sp)
+                Text(value, color = CostInk, maxLines = 1)
+            }
+            Text("⌄", color = CostTeal, fontSize = 18.sp)
+        }
     }
+}
+
+@Composable
+private fun CostOptionPicker(
+    title: String,
+    options: List<Pair<Long, String>>,
+    selectedId: Long?,
+    onSelect: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                options.forEach { (id, label) ->
+                    TextButton(onClick = { onSelect(id) }, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (id == selectedId) "✓  $label" else label, color = if (id == selectedId) CostTeal else CostInk)
+                    }
+                }
+                if (options.isEmpty()) Text("No hay opciones disponibles.", color = CostMuted)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar", color = CostTeal) } },
+    )
 }
 
 private fun Double.displayCost(): String = ((this * 100).toLong() / 100.0).toString()
