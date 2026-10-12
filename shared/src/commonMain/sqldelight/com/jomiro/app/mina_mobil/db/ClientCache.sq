@@ -8,6 +8,29 @@ CREATE TABLE cached_client (
     PRIMARY KEY (owner_id, id)
 );
 
+CREATE TABLE offline_snapshot (
+    owner_id INTEGER NOT NULL PRIMARY KEY,
+    payload TEXT NOT NULL,
+    downloaded_at TEXT NOT NULL
+);
+
+CREATE TABLE pending_sync_operation (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    owner_id INTEGER NOT NULL,
+    operation_type TEXT NOT NULL,
+    operation_key TEXT NOT NULL UNIQUE,
+    payload TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE TABLE offline_local_entity (
+    owner_id INTEGER NOT NULL,
+    local_id INTEGER NOT NULL,
+    entity_type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    PRIMARY KEY (owner_id, local_id)
+);
+
 selectCachedClients:
 SELECT * FROM cached_client WHERE owner_id = :ownerId ORDER BY name COLLATE NOCASE;
 
@@ -17,3 +40,45 @@ DELETE FROM cached_client WHERE owner_id = :ownerId;
 saveCachedClient:
 INSERT OR REPLACE INTO cached_client (owner_id, id, name, phone, address, is_active)
 VALUES (:ownerId, :id, :name, :phone, :address, :isActive);
+
+getOfflineSnapshot:
+SELECT payload FROM offline_snapshot WHERE owner_id = :ownerId;
+
+saveOfflineSnapshot:
+INSERT OR REPLACE INTO offline_snapshot (owner_id, payload, downloaded_at)
+VALUES (:ownerId, :payload, :downloadedAt);
+
+clearOfflineSnapshot:
+DELETE FROM offline_snapshot WHERE owner_id = :ownerId;
+
+listPendingSyncOperations:
+SELECT * FROM pending_sync_operation WHERE owner_id = :ownerId ORDER BY id;
+
+countPendingSyncOperations:
+SELECT COUNT(*) FROM pending_sync_operation WHERE owner_id = :ownerId;
+
+enqueueSyncOperation:
+INSERT INTO pending_sync_operation (owner_id, operation_type, operation_key, payload, created_at)
+VALUES (:ownerId, :operationType, :operationKey, :payload, :createdAt);
+
+clearPendingSyncOperations:
+DELETE FROM pending_sync_operation WHERE owner_id = :ownerId;
+
+clearDownloadedMobileData:
+DELETE FROM cached_client WHERE owner_id = :ownerId;
+
+listOfflineEntities:
+SELECT * FROM offline_local_entity WHERE owner_id = :ownerId ORDER BY local_id;
+
+nextOfflineEntityId:
+SELECT COALESCE(MIN(local_id), 0) - 1 FROM offline_local_entity WHERE owner_id = :ownerId;
+
+saveOfflineEntity:
+INSERT OR REPLACE INTO offline_local_entity (owner_id, local_id, entity_type, payload)
+VALUES (:ownerId, :localId, :entityType, :payload);
+
+deleteOfflineEntity:
+DELETE FROM offline_local_entity WHERE owner_id = :ownerId AND local_id = :localId;
+
+clearOfflineEntities:
+DELETE FROM offline_local_entity WHERE owner_id = :ownerId;

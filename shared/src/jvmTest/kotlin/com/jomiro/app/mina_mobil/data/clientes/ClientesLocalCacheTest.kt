@@ -2,6 +2,7 @@ package com.jomiro.app.mina_mobil.data.clientes
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.jomiro.app.mina_mobil.data.SessionRepository
+import com.jomiro.app.mina_mobil.data.OfflineSyncRepository
 import com.jomiro.app.mina_mobil.db.MinaDatabase
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -15,7 +16,9 @@ class ClientesLocalCacheTest {
         MinaDatabase.Schema.create(driver)
         val database = MinaDatabase(driver)
         val client = HttpClient(CIO)
-        val repository = ClientesRepository(client, "http://localhost/api/v1", SessionRepository(database), database)
+        val sessions = SessionRepository(database)
+        val sync = OfflineSyncRepository(client, "http://localhost/api/v1", sessions, database)
+        val repository = ClientesRepository(client, "http://localhost/api/v1", sessions, database, sync)
         val cliente = Cliente(7, "Cliente local", "555-0100", "Dirección", true)
 
         repository.guardarLocales(42, listOf(cliente))

@@ -2,6 +2,7 @@ package com.jomiro.app.mina_mobil.data.empleados
 
 import com.jomiro.app.mina_mobil.data.ApiError
 import com.jomiro.app.mina_mobil.data.SessionRepository
+import com.jomiro.app.mina_mobil.data.OfflineSyncRepository
 import com.jomiro.app.mina_mobil.network.ApiJson
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
@@ -28,10 +29,19 @@ class EmpleadosRepository(
     private val client: HttpClient,
     private val baseUrl: String,
     private val sessions: SessionRepository,
+    private val offlineSync: OfflineSyncRepository,
 ) {
     suspend fun listar(busqueda: String): List<Empleado> {
         val session = sessions.current()
             ?: throw EmpleadosException("La sesión expiró. Inicia sesión nuevamente.")
+        offlineSync.snapshot(session.userId)?.get("employees")?.let { raw ->
+            return runCatching { ApiJson.instance.decodeFromString<List<EmpleadoDto>>(raw.toString()).map { it.toModel() } }
+                .getOrElse { throw EmpleadosException("La copia local de empleados está dañada. Descargue los datos nuevamente.") }
+                .filter { empleado ->
+                    busqueda.isBlank() || listOfNotNull(empleado.codigo, empleado.nombre, empleado.telefono)
+                        .any { it.contains(busqueda.trim(), ignoreCase = true) }
+                }
+        }
         val endpoint = "${baseUrl.trimEnd('/')}/employees"
         val result = mutableListOf<Empleado>()
         var page = 1
@@ -74,7 +84,7 @@ class EmpleadosException(message: String) : Exception(message)
 private data class EmpleadosResponseDto(val data: List<EmpleadoDto>, val meta: EmpleadosMetaDto)
 
 @Serializable
-private data class EmpleadoDto(
+internal data class EmpleadoDto(
     val id: Long,
     val code: String,
     val name: String,
@@ -89,7 +99,7 @@ private data class EmpleadosMetaDto(
     @SerialName("last_page") val lastPage: Int,
 )
 
-private fun EmpleadoDto.toModel() = Empleado(
+internal fun EmpleadoDto.toModel() = Empleado(
     id = id,
     codigo = code,
     nombre = name,

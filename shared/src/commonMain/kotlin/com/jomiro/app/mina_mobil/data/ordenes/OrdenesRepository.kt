@@ -1,6 +1,7 @@
 package com.jomiro.app.mina_mobil.data.ordenes
 
 import com.jomiro.app.mina_mobil.data.ApiError
+import com.jomiro.app.mina_mobil.data.OfflineSyncRepository
 import com.jomiro.app.mina_mobil.data.SessionRepository
 import com.jomiro.app.mina_mobil.network.ApiJson
 import io.ktor.client.HttpClient
@@ -19,16 +20,30 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.datetime.daysUntil
+import kotlin.math.roundToInt
 
 class OrdenesRepository(
     private val client: HttpClient,
     private val baseUrl: String,
     private val sessions: SessionRepository,
+    private val offlineSync: OfflineSyncRepository,
 ) {
     suspend fun opcionesFormulario(): OpcionesFormularioOrden {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        offlineSync.snapshot(session.userId)?.let { snapshot ->
+            val clients = ApiJson.instance.decodeFromString<List<OpcionClienteOrdenDto>>(snapshot.getValue("clients").toString())
+            val units = ApiJson.instance.decodeFromString<List<OpcionUnidadPesoDto>>(snapshot.getValue("catalogs").jsonObject.getValue("units").toString())
+            return OpcionesOrdenDto(clients, units).toModel()
+        }
         val endpoint = "${baseUrl.trimEnd('/')}/orders/form-options"
         val response = client.get(endpoint) {
             headers {
@@ -55,6 +70,27 @@ class OrdenesRepository(
     ): OrdenTrabajo {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.downloaded(session.userId)) {
+            val operation = buildJsonObject {
+                put("cliente_id", clienteId)
+                put("fecha", fecha)
+                put("peso_mineral", pesoMineral)
+                put("unidad_peso_id", unidadPesoId)
+                put("descripcion", descripcion.trim())
+            }
+            var order = OrdenTrabajo(0, "", fecha, null, descripcion, pesoMineral, null, "Pendiente", 1)
+            val localId = offlineSync.enqueueOperation(
+                session.userId, "order.create", operation, "order",
+                localEntityPayload = { id ->
+                    val selectedClient = ApiJson.instance.decodeFromString<List<OpcionClienteOrdenDto>>(
+                        offlineSync.snapshot(session.userId)?.getValue("clients").toString(),
+                    ).firstOrNull { it.id == clienteId }
+                    order = order.copy(id = id, codigo = "LOCAL-${-id}", cliente = selectedClient?.name)
+                    order.toOfflineJson(clienteId, unidadPesoId)
+                },
+            )
+            return order.copy(id = localId, codigo = "LOCAL-${-localId}")
+        }
         val endpoint = "${baseUrl.trimEnd('/')}/orders"
         val response = client.post(endpoint) {
             headers {
@@ -82,6 +118,13 @@ class OrdenesRepository(
 
     suspend fun opcionesEdicion(id: Long): FormularioEdicionOrden {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.downloaded(session.userId)) {
+            val order = offlineOrder(session.userId, id) ?: throw OrdenesException("No se encontró la orden en la descarga local.")
+            val options = opcionesFormulario()
+            val detail = detalleLocal(session.userId, id)
+            return FormularioEdicionOrden(order, offlineClientId(session.userId, id) ?: 0L,
+                offlineUnitId(session.userId, id), detail.procesos.isNotEmpty(), options.clientes, options.unidades)
+        }
         val response = client.get("${baseUrl.trimEnd('/')}/orders/$id/edit-form-options") {
             headers {
                 set(HttpHeaders.Authorization, "Bearer ${session.token}")
@@ -104,6 +147,20 @@ class OrdenesRepository(
         tieneProcesos: Boolean,
     ): OrdenTrabajo {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.downloaded(session.userId)) {
+            val previous = offlineOrder(session.userId, id) ?: throw OrdenesException("No se encontró la orden en la descarga local.")
+            val clientName = opcionesFormulario().clientes.firstOrNull { it.id == clienteId }?.nombre
+            val updated = previous.copy(cliente = clientName, fecha = if (tieneProcesos) previous.fecha else fecha,
+                pesoMineral = if (tieneProcesos) previous.pesoMineral else pesoMineral, descripcion = descripcion)
+            val body = buildJsonObject {
+                put("order_id", id); put("cliente_id", clienteId); put("fecha", fecha)
+                put("descripcion", descripcion); put("peso_mineral", pesoMineral); put("unidad_peso_id", unidadPesoId)
+            }
+            offlineSync.enqueueOperation(session.userId, "order.update", body, "order", id) {
+                updated.toOfflineJson(clienteId, if (tieneProcesos) offlineUnitId(session.userId, id) else unidadPesoId)
+            }
+            return updated
+        }
         val response = client.put("${baseUrl.trimEnd('/')}/orders/$id") {
             headers {
                 set(HttpHeaders.Authorization, "Bearer ${session.token}")
@@ -130,16 +187,27 @@ class OrdenesRepository(
         clienteId: Long? = null,
         fechaDesde: String? = null,
         fechaHasta: String? = null,
-    ): PaginaOrdenes = consultar(
-        pagina = pagina,
-        perPage = LIST_PAGE_SIZE,
-        codigo = codigo,
-        clienteId = clienteId,
-        fechaDesde = fechaDesde,
-        fechaHasta = fechaHasta,
-    )
+    ): PaginaOrdenes {
+        val owner = sessions.current()?.userId
+        if (owner != null && offlineSync.downloaded(owner)) {
+            val orders = offlineOrders(owner).filter { order ->
+                (codigo.isNullOrBlank() || order.codigo.contains(codigo, ignoreCase = true)) &&
+                    (clienteId == null || offlineClientId(owner, order.id) == clienteId) &&
+                    (fechaDesde == null || (order.fecha ?: "") >= fechaDesde) &&
+                    (fechaHasta == null || (order.fecha ?: "") <= fechaHasta)
+            }
+            val start = (pagina - 1) * LIST_PAGE_SIZE
+            return PaginaOrdenes(orders.drop(start).take(LIST_PAGE_SIZE), pagina,
+                ((orders.size + LIST_PAGE_SIZE - 1) / LIST_PAGE_SIZE).coerceAtLeast(1), orders.size)
+        }
+        return consultar(pagina, LIST_PAGE_SIZE, codigo, clienteId, fechaDesde, fechaHasta)
+    }
 
     suspend fun calendario(fechaDesde: String, fechaHasta: String): List<OrdenTrabajo> {
+        val owner = sessions.current()?.userId
+        if (owner != null && offlineSync.downloaded(owner)) {
+            return offlineOrders(owner).filter { (it.fecha ?: "") in fechaDesde..fechaHasta }
+        }
         val firstPage = consultar(
             pagina = 1,
             perPage = CALENDAR_PAGE_SIZE,
@@ -161,6 +229,7 @@ class OrdenesRepository(
     suspend fun detalle(id: Long): DetalleOrdenTrabajo {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.downloaded(session.userId)) return detalleLocal(session.userId, id)
         val endpoint = "${baseUrl.trimEnd('/')}/orders/$id"
         val response = client.get(endpoint) {
             headers {
@@ -181,6 +250,13 @@ class OrdenesRepository(
     suspend fun finalizar(id: Long) {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.downloaded(session.userId)) {
+            val order = offlineOrder(session.userId, id) ?: throw OrdenesException("No se encontró la orden en la descarga local.")
+            offlineSync.enqueueOperation(
+                session.userId, "order.finalize", buildJsonObject { put("order_id", id) }, "order", id,
+            ) { order.copy(estado = "Finalizada", codigoEstado = 3).toOfflineJson(offlineClientId(session.userId, id)) }
+            return
+        }
         val endpoint = "${baseUrl.trimEnd('/')}/orders/$id/finalize"
         val response = client.post(endpoint) {
             headers {
@@ -200,6 +276,11 @@ class OrdenesRepository(
     suspend fun opcionesProceso(id: Long): List<EtapaOpcionProceso> {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        offlineSync.snapshot(session.userId)?.let { snapshot ->
+            return ApiJson.instance.decodeFromString<List<EtapaProcesoDto>>(
+                snapshot.getValue("catalogs").jsonObject.getValue("stages").toString(),
+            ).map { it.toModel() }
+        }
         val endpoint = "${baseUrl.trimEnd('/')}/orders/$id/process-form-options"
         val response = client.get(endpoint) {
             headers {
@@ -228,6 +309,26 @@ class OrdenesRepository(
     ) {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.downloaded(session.userId)) {
+            val processOptions = opcionesProceso(ordenId)
+            val stage = processOptions.firstOrNull { it.id == etapaId }?.nombre ?: "Etapa"
+            val payload = buildJsonObject {
+                put("order_id", ordenId); put("etapa_id", etapaId)
+                fechaInicio?.let { put("fecha_inicio", it) }; fechaFin?.let { put("fecha_fin", it) }
+                pesoEntrada?.let { put("peso_entrada", it) }; pesoSalida?.let { put("peso_salida", it) }
+                put("observaciones", observaciones)
+            }
+            offlineSync.enqueueOperation(session.userId, "process.create", payload, "process") { localId ->
+                buildJsonObject {
+                    put("id", localId); put("order_id", ordenId); put("code", "LOCAL-${-localId}")
+                    put("stage", stage); put("status", "Pendiente")
+                    fechaInicio?.let { put("start_date", it) }; fechaFin?.let { put("end_date", it) }
+                    pesoEntrada?.let { put("input_weight", it) }; pesoSalida?.let { put("output_weight", it) }
+                    put("observations", observaciones)
+                }
+            }
+            return
+        }
         val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/processes"
         val response = client.post(endpoint) {
             headers {
@@ -254,6 +355,14 @@ class OrdenesRepository(
 
     suspend fun opcionesTrabajo(ordenId: Long, procesoId: Long): OpcionesTrabajoEmpleado {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        offlineSync.snapshot(session.userId)?.let { snapshot ->
+            val catalogs = snapshot.getValue("catalogs").jsonObject
+            return OpcionesTrabajoDto(
+                ApiJson.instance.decodeFromString(catalogs.getValue("employees").toString()),
+                ApiJson.instance.decodeFromString(catalogs.getValue("payment_types").toString()),
+                ApiJson.instance.decodeFromString(catalogs.getValue("units").toString()),
+            ).toModel()
+        }
         val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/employee-work-options"
         val response = client.get(endpoint) {
             headers {
@@ -275,6 +384,21 @@ class OrdenesRepository(
         fecha: String,
     ): TarifaTrabajoEmpleado {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        offlineSync.snapshot(session.userId)?.let { snapshot ->
+            val catalogs = snapshot.getValue("catalogs").jsonObject
+            val rates = ApiJson.instance.decodeFromString<List<OfflineEmployeeRateDto>>(catalogs.getValue("employee_rates").toString())
+            val rate = rates.filter { it.employeeId == empleadoId && it.paymentTypeId == tipoPagoId && it.active }
+                .filter { (it.validFrom == null || fecha >= it.validFrom) && (it.validUntil == null || fecha <= it.validUntil) }
+                .maxByOrNull { it.validFrom.orEmpty() }
+                ?: throw OrdenesException("No hay una tarifa descargada vigente para este empleado, tipo de pago y fecha.")
+            val exchange = if (rate.isBaseCurrency) 1.0 else {
+                val exchangeRates = ApiJson.instance.decodeFromString<List<OfflineExchangeRateDto>>(catalogs.getValue("exchange_rates").toString())
+                exchangeRates.firstOrNull { it.currencyId == rate.currencyId && it.fecha == fecha }?.rate
+                    ?: throw OrdenesException("No se descargó el tipo de cambio necesario para la fecha seleccionada.")
+            }
+            return TarifaTrabajoEmpleado(rate.rate, rate.currency ?: "—", exchange, rate.rate * exchange,
+                rate.calculationMethod ?: "cantidad_x_tarifa", rate.validFrom, rate.validUntil)
+        }
         val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/employee-work-rate"
         val response = client.get(endpoint) {
             url {
@@ -307,6 +431,33 @@ class OrdenesRepository(
         observaciones: String,
     ) {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.downloaded(session.userId)) {
+            val options = opcionesTrabajo(ordenId, procesoId)
+            val employee = options.empleados.firstOrNull { it.id == empleadoId }?.nombre ?: "Empleado"
+            val payment = options.tiposPago.firstOrNull { it.id == tipoPagoId }?.nombre ?: "Tipo de pago"
+            val unit = options.unidades.firstOrNull { it.id == unidadId }?.nombre ?: ""
+            val processCode = detalleLocal(session.userId, ordenId).procesos.firstOrNull { it.id == procesoId }?.codigo
+                ?: "LOCAL-${-procesoId}"
+            val rate = tarifaTrabajo(ordenId, procesoId, empleadoId, tipoPagoId, fecha)
+            val total = (if (rate.metodoCalculo == "TARIFA") rate.tarifa else cantidad * rate.tarifa).roundMoney()
+            val totalNio = (if (rate.metodoCalculo == "TARIFA") rate.tarifaNio else cantidad * rate.tarifaNio).roundMoney()
+            val payload = buildJsonObject {
+                put("order_id", ordenId); put("process_id", procesoId); put("empleado_id", empleadoId)
+                put("tipo_pago_id", tipoPagoId); put("fecha", fecha)
+                horaInicio?.let { put("hora_inicio", it) }; horaFin?.let { put("hora_fin", it) }
+                put("cantidad", cantidad); put("unidad_id", unidadId); put("descripcion", descripcion); put("observaciones", observaciones)
+            }
+            offlineSync.enqueueOperation(session.userId, "employee_work.create", payload, "employee_work") { localId ->
+                buildJsonObject {
+                    put("id", localId); put("order_id", ordenId); put("process_id", procesoId)
+                    put("employee", employee); put("payment_type", payment); put("date", fecha)
+                    put("process", processCode); put("description", descripcion)
+                    put("quantity", cantidad); put("unit", unit); put("currency", rate.moneda)
+                    put("total", total); put("total_nio", totalNio)
+                }
+            }
+            return
+        }
         val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/employee-works"
         val response = client.post(endpoint) {
             headers {
@@ -331,6 +482,13 @@ class OrdenesRepository(
 
     suspend fun opcionesEquipo(ordenId: Long, procesoId: Long): OpcionesEquipoProceso {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        offlineSync.snapshot(session.userId)?.let { snapshot ->
+            val equipment = ApiJson.instance.decodeFromString<List<EquipoOpcionDto>>(
+                snapshot.getValue("catalogs").jsonObject.getValue("equipment").toString(),
+            )
+            val process = detalleLocal(session.userId, ordenId).procesos.firstOrNull { it.id == procesoId }
+            return OpcionesEquipoDto(equipment, process?.fechaInicio?.take(16).orEmpty()).toModel()
+        }
         val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/equipment-options") {
             headers {
                 set(HttpHeaders.Authorization, "Bearer ${session.token}")
@@ -351,6 +509,24 @@ class OrdenesRepository(
         fechaFin: String?,
     ): DepreciacionEquipoProceso {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        offlineSync.snapshot(session.userId)?.let { snapshot ->
+            val equipment = ApiJson.instance.decodeFromString<List<EquipoOpcionDto>>(
+                snapshot.getValue("catalogs").jsonObject.getValue("equipment").toString(),
+            ).firstOrNull { it.id == equipoId } ?: throw OrdenesException("El equipo no está en la descarga local.")
+            val start = kotlinx.datetime.LocalDate.parse(fechaInicio.take(10))
+            val end = kotlinx.datetime.LocalDate.parse((fechaFin ?: fechaInicio).take(10))
+            val days = start.daysUntil(end).coerceAtLeast(0).toDouble()
+            val daily = if (equipment.usefulLifeMonths > 0) (((equipment.acquisitionValue - equipment.residualValue).coerceAtLeast(0.0) /
+                (equipment.usefulLifeMonths * 30.0)) * 10_000).roundToInt() / 10_000.0 else 0.0
+            val overlap = offlineEquipmentAssignments(session.userId, equipoId).firstOrNull { (priorStart, priorEnd) ->
+                val startDate = fechaInicio.take(10)
+                val endDate = fechaFin?.take(10)
+                (priorEnd == null || startDate <= priorEnd) && (endDate == null || priorStart <= endDate)
+            }?.let { "El equipo ya tiene una asignación que se cruza con este periodo." }
+            val remaining = equipment.remainingValue.takeIf { it > 0.0 } ?: (equipment.acquisitionValue - equipment.residualValue).coerceAtLeast(0.0)
+            return DepreciacionEquipoProceso(equipment.code, equipment.acquisitionValue, equipment.residualValue,
+                equipment.usefulLifeMonths, days, daily, (daily * days).roundMoney().coerceAtMost(remaining.roundMoney()), remaining > 0.0, overlap)
+        }
         val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/equipment-depreciation") {
             url {
                 parameters.append("equipo_id", equipoId.toString())
@@ -377,6 +553,30 @@ class OrdenesRepository(
         observaciones: String,
     ) {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.downloaded(session.userId)) {
+            val equipment = opcionesEquipo(ordenId, procesoId).equipos.firstOrNull { it.id == equipoId }
+                ?: throw OrdenesException("El equipo no está en la descarga local.")
+            val estimate = depreciacionEquipo(ordenId, procesoId, equipoId, fechaInicio, fechaFin)
+            if (!estimate.disponible || estimate.solapamiento != null) {
+                throw OrdenesException(estimate.solapamiento ?: "El equipo no tiene valor disponible para depreciar.")
+            }
+            val payload = buildJsonObject {
+                put("order_id", ordenId); put("process_id", procesoId); put("equipo_id", equipoId)
+                put("fecha_inicio", fechaInicio); fechaFin?.let { put("fecha_fin", it) }; put("observaciones", observaciones)
+            }
+            val processCode = detalleLocal(session.userId, ordenId).procesos.firstOrNull { it.id == procesoId }?.codigo
+                ?: "LOCAL-${-procesoId}"
+            offlineSync.enqueueOperation(session.userId, "equipment.assign", payload, "equipment") { localId ->
+                buildJsonObject {
+                    put("id", localId); put("order_id", ordenId); put("process_id", procesoId); put("process", processCode)
+                    put("equipment_id", equipoId); put("equipment_code", equipment.codigo); put("equipment_name", equipment.nombre)
+                    put("start_date", fechaInicio); fechaFin?.let { put("end_date", it) }; put("observations", observaciones)
+                    put("days", estimate.dias); put("daily_depreciation", estimate.depreciacionDiaria)
+                    put("total_depreciation", estimate.depreciacionTotal)
+                }
+            }
+            return
+        }
         val response = client.post("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/equipment") {
             headers {
                 set(HttpHeaders.Authorization, "Bearer ${session.token}")
@@ -429,6 +629,96 @@ class OrdenesRepository(
         return parseOrdersPage(body)
     }
 
+    private fun offlineOrder(ownerId: Long, id: Long): OrdenTrabajo? = offlineOrders(ownerId).firstOrNull { it.id == id }
+
+    private fun offlineClientId(ownerId: Long, id: Long): Long? {
+        val cached = offlineSync.snapshot(ownerId)?.get("orders")
+            ?.let { raw -> runCatching { ApiJson.instance.decodeFromString<List<OrdenTrabajoDetalleDto>>(raw.toString()) }.getOrNull() }
+            .orEmpty().firstOrNull { it.id == id }?.client?.id
+        if (cached != null) return cached
+        return offlineSync.localEntities(ownerId).firstOrNull { it.type == "order" && it.id == id }
+            ?.payload?.get("client")?.jsonObject?.get("id")?.jsonPrimitive?.content?.toLongOrNull()
+    }
+
+    private fun offlineUnitId(ownerId: Long, id: Long): Long? {
+        val snapshotUnit = offlineSync.snapshot(ownerId)?.get("orders")
+            ?.let { raw -> runCatching { ApiJson.instance.decodeFromString<List<OrdenTrabajoDetalleDto>>(raw.toString()) }.getOrNull() }
+            .orEmpty().firstOrNull { it.id == id }?.weightUnitId
+        if (snapshotUnit != null) return snapshotUnit
+        return offlineSync.localEntities(ownerId).firstOrNull { it.type == "order" && it.id == id }
+            ?.payload?.get("weight_unit_id")?.jsonPrimitive?.content?.toLongOrNull()
+    }
+
+    private fun offlineEquipmentAssignments(ownerId: Long, equipmentId: Long): List<Pair<String, String?>> {
+        val fromCatalog = offlineSync.snapshot(ownerId)?.get("catalogs")?.jsonObject?.get("equipment_assignments")
+            ?.let { raw ->
+                runCatching { raw.jsonArray }.getOrNull().orEmpty().mapNotNull { entry ->
+                    val assignment = entry.jsonObject
+                    if (assignment["equipment_id"]?.jsonPrimitive?.content?.toLongOrNull() != equipmentId) null
+                    else assignment["start_date"]?.jsonPrimitive?.content?.take(10)?.let {
+                        it to assignment["end_date"]?.jsonPrimitive?.content?.take(10)
+                    }
+                }
+            }.orEmpty()
+        val fromOrderDetails = offlineSync.snapshot(ownerId)?.get("orders")
+            ?.let { raw -> runCatching { ApiJson.instance.decodeFromString<List<OrdenTrabajoDetalleDto>>(raw.toString()) }.getOrNull() }
+            .orEmpty().flatMap { it.equipment }.filter { it.equipmentId == equipmentId }
+            .mapNotNull { item -> item.startDate?.take(10)?.let { it to item.endDate?.take(10) } }
+        val local = offlineSync.localEntities(ownerId).filter { it.type == "equipment" }
+            .mapNotNull { entity ->
+                val payload = entity.payload
+                if (payload["equipment_id"]?.jsonPrimitive?.content?.toLongOrNull() != equipmentId) null
+                else payload["start_date"]?.jsonPrimitive?.content?.take(10)?.let {
+                    it to payload["end_date"]?.jsonPrimitive?.content?.take(10)
+                }
+            }
+        return fromCatalog + fromOrderDetails + local
+    }
+
+    private fun offlineOrders(ownerId: Long): List<OrdenTrabajo> {
+        val snapshotOrders = offlineSync.snapshot(ownerId)?.get("orders")
+            ?.let { raw -> runCatching { ApiJson.instance.decodeFromString<List<OrdenTrabajoDetalleDto>>(raw.toString()) }.getOrNull() }
+            .orEmpty().map { dto -> OrdenTrabajoDto(
+                dto.id, dto.code, dto.date, dto.client, dto.description, dto.mineralWeight, dto.weightUnit, dto.status, dto.statusCode,
+            ).toModel() }
+        val localOrders = offlineSync.localEntities(ownerId).filter { it.type == "order" }.mapNotNull { entity ->
+            runCatching { ApiJson.instance.decodeFromString<OrdenTrabajoDto>(entity.payload.toString()).toModel() }.getOrNull()
+        }
+        return (snapshotOrders + localOrders).associateBy { it.id }.values.sortedWith(
+            compareByDescending<OrdenTrabajo> { it.fecha }.thenByDescending { it.id },
+        )
+    }
+
+    private fun detalleLocal(ownerId: Long, id: Long): DetalleOrdenTrabajo {
+        val snapshotOrder = offlineSync.snapshot(ownerId)?.get("orders")
+            ?.let { raw -> runCatching { ApiJson.instance.decodeFromString<List<OrdenTrabajoDetalleDto>>(raw.toString()) }.getOrNull() }
+            .orEmpty().firstOrNull { it.id == id }
+        val localOrders = offlineSync.localEntities(ownerId).filter { it.type == "order" && it.id == id }
+        val localOrder = localOrders.lastOrNull()?.let { runCatching { ApiJson.instance.decodeFromString<OrdenTrabajoDetalleDto>(it.payload.toString()) }.getOrNull() }
+        val orderDto = when {
+            localOrder != null && snapshotOrder != null -> snapshotOrder.copy(
+                code = localOrder.code, date = localOrder.date, client = localOrder.client,
+                description = localOrder.description, mineralWeight = localOrder.mineralWeight,
+                weightUnit = localOrder.weightUnit, status = localOrder.status, statusCode = localOrder.statusCode,
+            )
+            localOrder != null -> localOrder
+            snapshotOrder != null -> snapshotOrder
+            else -> throw OrdenesException("No se encontró la orden en la descarga local.")
+        }
+        val local = offlineSync.localEntities(ownerId)
+        val localProcesses = local.filter { it.type == "process" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
+            .mapNotNull { runCatching { ApiJson.instance.decodeFromString<ProcesoOrdenDto>(it.payload.toString()) }.getOrNull() }
+        val localWorks = local.filter { it.type == "employee_work" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
+            .mapNotNull { runCatching { ApiJson.instance.decodeFromString<TrabajoEmpleadoDto>(it.payload.toString()) }.getOrNull() }
+        val localEquipment = local.filter { it.type == "equipment" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
+            .mapNotNull { runCatching { ApiJson.instance.decodeFromString<EquipoProcesoDto>(it.payload.toString()) }.getOrNull() }
+        return orderDto.copy(
+            processes = (orderDto.processes + localProcesses).distinctBy { it.id },
+            employeeWork = (orderDto.employeeWork + localWorks).distinctBy { it.id },
+            equipment = (orderDto.equipment + localEquipment).distinctBy { it.id },
+        ).toModel()
+    }
+
     private companion object {
         const val LIST_PAGE_SIZE = 30
         const val CALENDAR_PAGE_SIZE = 100
@@ -440,6 +730,45 @@ class OrdenesRepository(
         return OrdenesException(message ?: fallback)
     }
 }
+
+private fun OrdenTrabajo.toOfflineJson(clientId: Long? = null, unitId: Long? = null): JsonObject = buildJsonObject {
+    put("id", id)
+    put("code", codigo)
+    fecha?.let { put("date", it) }
+    put("client", buildJsonObject {
+        clientId?.let { put("id", it) }
+        cliente?.let { put("name", it) }
+    })
+    descripcion?.let { put("description", it) }
+    pesoMineral?.let { put("mineral_weight", it) }
+    unidadPeso?.let { put("weight_unit", it) }
+    unitId?.let { put("weight_unit_id", it) }
+    put("status", estado)
+    put("status_code", codigoEstado)
+}
+
+private fun Double.roundMoney(): Double = (this * 100).roundToInt() / 100.0
+
+@Serializable
+private data class OfflineEmployeeRateDto(
+    @SerialName("employee_id") val employeeId: Long,
+    @SerialName("payment_type_id") val paymentTypeId: Long,
+    val rate: Double,
+    @SerialName("currency_id") val currencyId: Long,
+    val currency: String? = null,
+    @SerialName("is_base_currency") val isBaseCurrency: Boolean,
+    @SerialName("calculation_method") val calculationMethod: String? = null,
+    @SerialName("valid_from") val validFrom: String? = null,
+    @SerialName("valid_until") val validUntil: String? = null,
+    val active: Boolean,
+)
+
+@Serializable
+private data class OfflineExchangeRateDto(
+    @SerialName("moneda_id") val currencyId: Long,
+    val fecha: String,
+    @SerialName("valor") val rate: Double,
+)
 
 @Serializable
 private data class CrearOrdenRequestDto(
@@ -639,6 +968,7 @@ private data class EquipoOpcionDto(
     @SerialName("acquisition_value") val acquisitionValue: Double,
     @SerialName("residual_value") val residualValue: Double,
     @SerialName("useful_life_months") val usefulLifeMonths: Int,
+    @SerialName("remaining_value") val remainingValue: Double = 0.0,
 )
 
 private fun OpcionesEquipoDto.toModel() = OpcionesEquipoProceso(
@@ -846,6 +1176,7 @@ internal data class OrdenTrabajoDetalleDto(
     val liquidations: List<LiquidacionOrdenDto> = emptyList(),
     @SerialName("employee_work") val employeeWork: List<TrabajoEmpleadoDto> = emptyList(),
     val equipment: List<EquipoProcesoDto> = emptyList(),
+    @SerialName("weight_unit_id") val weightUnitId: Long? = null,
 )
 
 @Serializable

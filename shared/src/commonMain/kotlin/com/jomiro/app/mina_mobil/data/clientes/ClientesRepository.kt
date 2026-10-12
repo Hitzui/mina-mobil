@@ -2,6 +2,7 @@ package com.jomiro.app.mina_mobil.data.clientes
 
 import com.jomiro.app.mina_mobil.data.ApiError
 import com.jomiro.app.mina_mobil.data.SessionRepository
+import com.jomiro.app.mina_mobil.data.OfflineSyncRepository
 import com.jomiro.app.mina_mobil.db.MinaDatabase
 import com.jomiro.app.mina_mobil.network.ApiJson
 import io.ktor.client.HttpClient
@@ -24,6 +25,7 @@ class ClientesRepository(
     private val baseUrl: String,
     private val sessions: SessionRepository,
     private val database: MinaDatabase,
+    private val offlineSync: OfflineSyncRepository,
 ) {
     fun listarLocales(ownerId: Long): List<Cliente> = database.clientCacheQueries.selectCachedClients(ownerId).executeAsList().map { row ->
         Cliente(row.id, row.name, row.phone, row.address, row.is_active != 0L)
@@ -47,6 +49,13 @@ class ClientesRepository(
 
     suspend fun listar(pagina: Int): PaginaClientes {
         val session = sessions.current() ?: throw ClientesException("La sesión expiró. Inicia sesión nuevamente.")
+        offlineSync.snapshot(session.userId)?.get("clients")?.let { raw ->
+            val clients = runCatching { ApiJson.instance.decodeFromString<List<ClienteDtoOffline>>(raw.toString()) }
+                .getOrElse { throw ClientesException("La copia local de clientes está dañada. Descargue los datos nuevamente.") }
+                .map { Cliente(it.id, it.name, it.phone, it.address, it.isActive) }
+            val start = (pagina - 1) * PAGE_SIZE
+            return PaginaClientes(clients.drop(start).take(PAGE_SIZE), pagina, ((clients.size + PAGE_SIZE - 1) / PAGE_SIZE).coerceAtLeast(1), clients.size)
+        }
         val endpoint = "${baseUrl.trimEnd('/')}/clients"
         val response = client.get(endpoint) {
             url {
@@ -94,6 +103,15 @@ class ClientesRepository(
         const val PAGE_SIZE = 30
     }
 }
+
+@Serializable
+private data class ClienteDtoOffline(
+    val id: Long,
+    val name: String,
+    val phone: String? = null,
+    val address: String? = null,
+    @SerialName("is_active") val isActive: Boolean,
+)
 
 private fun logClientesApiResponse(
     endpoint: String,

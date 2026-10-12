@@ -100,4 +100,7 @@ internal data class ApiUser(
 internal data class ApiCashRegister(val id: Long, val name: String)
 
 @Serializable
-internal data class ApiError(val message: String = "")
+internal data class ApiError(
+    val message: String = "",
+    val errors: Map<String, List<String>> = emptyMap(),
+)

@@ -2,6 +2,7 @@ package com.jomiro.app.mina_mobil.di
 
 import com.jomiro.app.mina_mobil.data.AuthRepository
 import com.jomiro.app.mina_mobil.data.SessionRepository
+import com.jomiro.app.mina_mobil.data.OfflineSyncRepository
 import com.jomiro.app.mina_mobil.data.clientes.ClientesRepository
 import com.jomiro.app.mina_mobil.data.empleados.EmpleadosRepository
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenesRepository
@@ -12,6 +13,7 @@ import com.jomiro.app.mina_mobil.screen.clientes.listado.ClientesListadoViewMode
 import com.jomiro.app.mina_mobil.screen.empleados.listado.EmpleadosViewModel
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoViewModel
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenTrabajoDetalleViewModel
+import com.jomiro.app.mina_mobil.screen.sync.OfflineSyncViewModel
 import io.ktor.client.HttpClient
 import org.koin.core.KoinApplication
 import org.koin.core.context.startKoin
@@ -26,15 +28,17 @@ fun startAppKoin(database: MinaDatabase, httpClient: HttpClient): KoinApplicatio
                 single { httpClient }
                 single { resolvedApiBaseUrl() }
                 single { SessionRepository(get()) }
+                single { OfflineSyncRepository(get(), get(), get(), get()) }
                 single { AuthRepository(get(), get(), get()) }
-                single { ClientesRepository(get(), get(), get(), get()) }
-                single { EmpleadosRepository(get(), get(), get()) }
-                single { OrdenesRepository(get(), get(), get()) }
+                single { ClientesRepository(get(), get(), get(), get(), get()) }
+                single { EmpleadosRepository(get(), get(), get(), get()) }
+                single { OrdenesRepository(get(), get(), get(), get()) }
                 viewModel { LoginViewModel(get()) }
                 viewModel { ClientesListadoViewModel(get()) }
                 viewModel { EmpleadosViewModel(get()) }
                 viewModel { OrdenesTrabajoViewModel(get(), get()) }
                 viewModel { OrdenTrabajoDetalleViewModel(get()) }
+                viewModel { OfflineSyncViewModel(get()) }
             },
         )
     }

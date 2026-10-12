@@ -60,7 +60,13 @@ import com.jomiro.app.mina_mobil.screen.empleados.listado.EmpleadosScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenTrabajoDetalleScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenDetalleSeccion
+import com.jomiro.app.mina_mobil.screen.sync.OfflineSyncScreen
+import com.jomiro.app.mina_mobil.data.OfflineSyncRepository
+import com.jomiro.app.mina_mobil.screen.clientes.listado.ClientesListadoViewModel
+import com.jomiro.app.mina_mobil.screen.empleados.listado.EmpleadosViewModel
+import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoViewModel
 import org.koin.compose.viewmodel.koinViewModel
+import org.koin.compose.koinInject
 import kotlinx.coroutines.launch
 
 private val Ink = Color(0xFF172C3D)
@@ -84,6 +90,8 @@ fun App() {
                     cashRegister = session.cashRegisterName,
                     canCreateOrders = "ordenes_trabajo.create" in session.permissions,
                     canEditOrders = "ordenes_trabajo.edit" in session.permissions,
+                    canViewOrders = "ordenes_trabajo.view" in session.permissions,
+                    canViewClients = "clientes.view" in session.permissions,
                     canCreateProcesses = "procesos_orden.create" in session.permissions,
                     canViewEmployees = "empleados.view" in session.permissions,
                     canViewEmployeeWork = "trabajos_empleado.view" in session.permissions,
@@ -216,6 +224,8 @@ private enum class AppSection(val title: String, val icon: String) {
     CLIENTS("Clientes", "♙"),
     WORK_ORDERS("Órdenes de trabajo", "▤"),
     EMPLOYEES("Empleados", "♙"),
+    DOWNLOAD("Descarga", "↓"),
+    UPLOAD("Upload", "↑"),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -227,6 +237,8 @@ private fun SignedInScreen(
     cashRegister: String,
     canCreateOrders: Boolean,
     canEditOrders: Boolean,
+    canViewOrders: Boolean,
+    canViewClients: Boolean,
     canCreateProcesses: Boolean,
     canViewEmployees: Boolean,
     canViewEmployeeWork: Boolean,
@@ -235,6 +247,13 @@ private fun SignedInScreen(
     canCreateProcessEquipment: Boolean,
     onLogout: () -> Unit,
 ) {
+    val offlineSyncRepository: OfflineSyncRepository = koinInject()
+    val clientsViewModel: ClientesListadoViewModel = koinViewModel()
+    val employeesViewModel: EmpleadosViewModel = koinViewModel()
+    val ordersViewModel: OrdenesTrabajoViewModel = koinViewModel()
+    var hasOfflineSnapshot by remember(userId) { mutableStateOf(offlineSyncRepository.downloaded(userId)) }
+    var offlineSnapshotRevision by remember(userId) { mutableStateOf(0) }
+    var isSyncRunning by remember(userId) { mutableStateOf(false) }
     var selectedSection by remember { mutableStateOf(AppSection.HOME) }
     var selectedOrderId by remember { mutableStateOf<Long?>(null) }
     var selectedOrderSection by remember { mutableStateOf<OrdenDetalleSeccion?>(null) }
@@ -243,6 +262,13 @@ private fun SignedInScreen(
     var editingOrder by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
+    androidx.compose.runtime.LaunchedEffect(offlineSnapshotRevision, userId) {
+        if (offlineSnapshotRevision > 0) {
+            clientsViewModel.refrescar()
+            employeesViewModel.refrescar()
+            ordersViewModel.refrescar()
+        }
+    }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -253,11 +279,16 @@ private fun SignedInScreen(
                 Column(
                     modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
                 ) {
-                    AppSection.entries.filter { it != AppSection.EMPLOYEES || canViewEmployees }.forEach { section ->
+                    AppSection.entries.filter { section ->
+                        (section != AppSection.EMPLOYEES || canViewEmployees) &&
+                            (section != AppSection.CLIENTS || canViewClients) &&
+                            (section != AppSection.WORK_ORDERS || canViewOrders)
+                    }.forEach { section ->
                         NavigationDrawerItem(
                             label = { Text(section.title) },
                             selected = selectedSection == section,
                             onClick = {
+                                if (isSyncRunning) return@NavigationDrawerItem
                                 selectedSection = section
                                 selectedOrderId = null
                                 selectedOrderSection = null
@@ -276,6 +307,7 @@ private fun SignedInScreen(
                     label = { Text("Cerrar sesión") },
                     selected = false,
                     onClick = {
+                        if (isSyncRunning) return@NavigationDrawerItem
                         coroutineScope.launch { drawerState.close() }
                         onLogout()
                     },
@@ -339,16 +371,38 @@ private fun SignedInScreen(
                     cashRegister = cashRegister,
                     modifier = Modifier.padding(contentPadding),
                 )
-                AppSection.CLIENTS -> ClientesListadoScreen(
+                AppSection.CLIENTS -> if (hasOfflineSnapshot) ClientesListadoScreen(
                     userId = userId,
                     modifier = Modifier.padding(contentPadding),
-                )
-                AppSection.EMPLOYEES -> EmpleadosScreen(
+                ) else OfflineRequiredContent(Modifier.padding(contentPadding)) { selectedSection = AppSection.DOWNLOAD }
+                AppSection.EMPLOYEES -> if (hasOfflineSnapshot) EmpleadosScreen(
                     userId = userId,
+                    modifier = Modifier.padding(contentPadding),
+                ) else OfflineRequiredContent(Modifier.padding(contentPadding)) { selectedSection = AppSection.DOWNLOAD }
+                AppSection.DOWNLOAD -> OfflineSyncScreen(
+                    userId = userId,
+                    upload = false,
+                    onRunningChanged = { isSyncRunning = it },
+                    onDownloadedChanged = {
+                        hasOfflineSnapshot = it
+                        if (it) offlineSnapshotRevision++
+                    },
+                    modifier = Modifier.padding(contentPadding),
+                )
+                AppSection.UPLOAD -> OfflineSyncScreen(
+                    userId = userId,
+                    upload = true,
+                    onRunningChanged = { isSyncRunning = it },
+                    onDownloadedChanged = {
+                        hasOfflineSnapshot = it
+                        if (it) offlineSnapshotRevision++
+                    },
                     modifier = Modifier.padding(contentPadding),
                 )
                 AppSection.WORK_ORDERS -> {
-                    if (selectedOrderId == null) {
+                    if (!hasOfflineSnapshot) {
+                        OfflineRequiredContent(Modifier.padding(contentPadding)) { selectedSection = AppSection.DOWNLOAD }
+                    } else if (selectedOrderId == null) {
                         OrdenesTrabajoScreen(
                             userId = userId,
                             canCreate = canCreateOrders,
@@ -394,6 +448,23 @@ private fun SignedInScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun OfflineRequiredContent(modifier: Modifier = Modifier, onDownload: () -> Unit) {
+    Column(
+        modifier.fillMaxSize().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text("Descargue los datos para trabajar", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(8.dp))
+        Text("Este dispositivo necesita una copia local. Después de subir los cambios, vuelva a descargar antes de continuar.", color = Muted, fontSize = 14.sp)
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onDownload, colors = ButtonDefaults.buttonColors(containerColor = Teal)) {
+            Text("Ir a Descarga")
         }
     }
 }
