@@ -1,0 +1,12 @@
+CREATE TABLE mobile_session (
+    id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    token TEXT NOT NULL,
+    expires_at TEXT,
+    user_id INTEGER NOT NULL,
+    user_name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    roles_json TEXT NOT NULL,
+    permissions_json TEXT NOT NULL,
+    cash_register_id INTEGER NOT NULL,
+    cash_register_name TEXT NOT NULL
+);
