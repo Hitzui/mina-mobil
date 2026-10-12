@@ -21,7 +21,7 @@ class OrdenesOfflineRepositoryTest {
         sessions.save(
             UserSession("offline-token", null, 42, "Usuario", "offline@test.local", emptyList(), emptyList(), 1, "Caja"),
         )
-        val body = """{"data":{"clients":[{"id":2,"name":"Cliente local","phone":null,"address":null,"is_active":true}],"employees":[],"orders":[],"catalogs":{"units":[{"id":3,"name":"Tonelada"}],"stages":[{"id":4,"name":"Trituración","order":1}],"employees":[],"payment_types":[],"equipment":[],"employee_rates":[],"exchange_rates":[]}}}"""
+        val body = """{"data":{"clients":[{"id":2,"name":"Cliente local","phone":null,"address":null,"is_active":true}],"employees":[],"orders":[],"catalogs":{"units":[{"id":3,"name":"Tonelada"}],"stages":[{"id":4,"name":"Trituración","order":1}],"employees":[],"payment_types":[],"equipment":[],"employee_rates":[],"exchange_rates":[],"cost_categories":[{"id":6,"name":"Energía"}],"currencies":[{"id":7,"code":"NIO","name":"Córdoba","is_base_currency":true}]}}}"""
         database.clientCacheQueries.saveOfflineSnapshot(42, body, "2026-10-11T00:00:00Z")
         val client = HttpClient(CIO)
         val sync = OfflineSyncRepository(client, "http://localhost/api/v1", sessions, database)
@@ -48,7 +48,23 @@ class OrdenesOfflineRepositoryTest {
         assertEquals(1, detail.procesos.size)
         assertTrue(detail.procesos.single().id < 0)
         assertEquals("Proceso local", detail.procesos.single().observaciones)
-        assertEquals(2, sync.pendingCount(42))
+        val process = detail.procesos.single()
+        val costOptions = kotlinx.coroutines.runBlocking { repository.opcionesCostosProceso(order.id, process.id) }
+        assertEquals("Energía", costOptions.categorias.single().nombre)
+        assertEquals("NIO", costOptions.monedas.single().codigo)
+        val cost = kotlinx.coroutines.runBlocking {
+            repository.guardarCostoProceso(order.id, process.id, null, 6, "2026-10-11", "Energía del molino", 2.0, 12.5, 7, null)
+        }
+        assertTrue(cost.id < 0)
+        assertEquals(25.0, cost.total)
+        assertEquals(cost.id, kotlinx.coroutines.runBlocking { repository.listarCostosProceso(order.id, process.id).single().id })
+        kotlinx.coroutines.runBlocking {
+            repository.guardarCostoProceso(order.id, process.id, cost.id, 6, "2026-10-11", "Energía corregida", 3.0, 12.5, 7, null)
+        }
+        assertEquals("Energía corregida", kotlinx.coroutines.runBlocking { repository.listarCostosProceso(order.id, process.id).single().descripcion })
+        kotlinx.coroutines.runBlocking { repository.eliminarCostoProceso(order.id, process.id, cost.id) }
+        assertEquals(emptyList(), kotlinx.coroutines.runBlocking { repository.listarCostosProceso(order.id, process.id) })
+        assertEquals(5, sync.pendingCount(42))
 
         client.close()
         driver.close()

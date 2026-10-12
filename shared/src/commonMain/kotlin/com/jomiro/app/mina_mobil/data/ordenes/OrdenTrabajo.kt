@@ -109,7 +109,27 @@ data class ProcesoOrdenTrabajo(
     val pesoEntrada: Double?,
     val pesoSalida: Double?,
     val observaciones: String?,
+    val costos: List<CostoProcesoTrabajo> = emptyList(),
 )
+
+data class CostoProcesoTrabajo(
+    val id: Long,
+    val categoriaId: Long,
+    val categoria: String,
+    val fecha: String,
+    val descripcion: String,
+    val cantidad: Double,
+    val costoUnitario: Double,
+    val total: Double,
+    val monedaId: Long,
+    val moneda: String,
+    val totalNio: Double?,
+    val observaciones: String?,
+)
+
+data class CategoriaCostoOpcion(val id: Long, val nombre: String)
+data class MonedaCostoOpcion(val id: Long, val codigo: String, val nombre: String, val monedaBase: Boolean)
+data class OpcionesCostoProceso(val categorias: List<CategoriaCostoOpcion>, val monedas: List<MonedaCostoOpcion>, val fecha: String)
 
 data class EtapaOpcionProceso(val id: Long, val nombre: String, val orden: Int)
 

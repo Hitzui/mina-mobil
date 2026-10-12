@@ -98,6 +98,10 @@ fun App() {
                     canCreateEmployeeWork = "trabajos_empleado.create" in session.permissions,
                     canViewProcessEquipment = "proceso_equipo.view" in session.permissions,
                     canCreateProcessEquipment = "proceso_equipo.create" in session.permissions,
+                    canViewProcessCosts = "movimientos_costo.view" in session.permissions,
+                    canCreateProcessCosts = "movimientos_costo.create" in session.permissions,
+                    canEditProcessCosts = "movimientos_costo.edit" in session.permissions,
+                    canDeleteProcessCosts = "movimientos_costo.delete" in session.permissions,
                     onLogout = viewModel::logout,
                 )
             } else {
@@ -245,6 +249,10 @@ private fun SignedInScreen(
     canCreateEmployeeWork: Boolean,
     canViewProcessEquipment: Boolean,
     canCreateProcessEquipment: Boolean,
+    canViewProcessCosts: Boolean,
+    canCreateProcessCosts: Boolean,
+    canEditProcessCosts: Boolean,
+    canDeleteProcessCosts: Boolean,
     onLogout: () -> Unit,
 ) {
     val offlineSyncRepository: OfflineSyncRepository = koinInject()
@@ -259,6 +267,7 @@ private fun SignedInScreen(
     var selectedOrderSection by remember { mutableStateOf<OrdenDetalleSeccion?>(null) }
     var equipmentProcessId by remember { mutableStateOf<Long?>(null) }
     var workProcessId by remember { mutableStateOf<Long?>(null) }
+    var costProcessId by remember { mutableStateOf<Long?>(null) }
     var editingOrder by remember { mutableStateOf(false) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val coroutineScope = rememberCoroutineScope()
@@ -294,6 +303,7 @@ private fun SignedInScreen(
                                 selectedOrderSection = null
                                 equipmentProcessId = null
                                 workProcessId = null
+                                costProcessId = null
                                 editingOrder = false
                                 coroutineScope.launch { drawerState.close() }
                             },
@@ -432,14 +442,21 @@ private fun SignedInScreen(
                             canCreateEmployeeWork = canCreateEmployeeWork,
                             canViewProcessEquipment = canViewProcessEquipment,
                             canCreateProcessEquipment = canCreateProcessEquipment,
+                            canViewProcessCosts = canViewProcessCosts,
+                            canCreateProcessCosts = canCreateProcessCosts,
+                            canEditProcessCosts = canEditProcessCosts,
+                            canDeleteProcessCosts = canDeleteProcessCosts,
                             equipmentProcessId = equipmentProcessId,
                             workProcessId = workProcessId,
+                            costProcessId = costProcessId,
                             editingOrder = editingOrder,
                             onAssignEquipment = { equipmentProcessId = it },
                             onAddEmployeeWork = { workProcessId = it },
+                            onManageProcessCosts = { costProcessId = it },
                             onEditOrder = { editingOrder = true },
                             onBackFromEquipment = { equipmentProcessId = null },
                             onBackFromEmployeeWork = { workProcessId = null },
+                            onBackFromProcessCosts = { costProcessId = null },
                             onBackFromOrderEdit = { editingOrder = false },
                             seccion = selectedOrderSection,
                             onSelectSection = { selectedOrderSection = it },

@@ -93,14 +93,21 @@ fun OrdenTrabajoDetalleScreen(
     canCreateEmployeeWork: Boolean = false,
     canViewProcessEquipment: Boolean = false,
     canCreateProcessEquipment: Boolean = false,
+    canViewProcessCosts: Boolean = false,
+    canCreateProcessCosts: Boolean = false,
+    canEditProcessCosts: Boolean = false,
+    canDeleteProcessCosts: Boolean = false,
     equipmentProcessId: Long? = null,
     workProcessId: Long? = null,
+    costProcessId: Long? = null,
     editingOrder: Boolean = false,
     onAssignEquipment: (Long) -> Unit = {},
     onAddEmployeeWork: (Long) -> Unit = {},
+    onManageProcessCosts: (Long) -> Unit = {},
     onEditOrder: () -> Unit = {},
     onBackFromEquipment: () -> Unit = {},
     onBackFromEmployeeWork: () -> Unit = {},
+    onBackFromProcessCosts: () -> Unit = {},
     onBackFromOrderEdit: () -> Unit = {},
     seccion: OrdenDetalleSeccion? = null,
     onSelectSection: (OrdenDetalleSeccion) -> Unit = {},
@@ -189,6 +196,24 @@ fun OrdenTrabajoDetalleScreen(
                         modifier = modifier,
                     )
                 }
+            } else if (costProcessId != null) {
+                val process = detail.procesos.firstOrNull { it.id == costProcessId }
+                if (process == null) {
+                    Column(modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
+                        Text("No se encontró el proceso seleccionado.", color = DetailMuted)
+                        TextButton(onClick = onBackFromProcessCosts) { Text("Volver", color = DetailTeal) }
+                    }
+                } else {
+                    CostosProcesoScreen(
+                        ordenId = ordenId,
+                        process = process,
+                        canCreate = canCreateProcessCosts && order.codigoEstado != 0 && order.codigoEstado != 3,
+                        canEdit = canEditProcessCosts,
+                        canDelete = canDeleteProcessCosts,
+                        onBack = onBackFromProcessCosts,
+                        modifier = modifier,
+                    )
+                }
             } else if (equipmentProcessId != null) {
                 val process = detail.procesos.firstOrNull { it.id == equipmentProcessId }
                 if (process == null) {
@@ -232,6 +257,8 @@ fun OrdenTrabajoDetalleScreen(
                     puedeAgregarTrabajos = canCreateEmployeeWork && order.codigoEstado != 0 && order.codigoEstado != 3,
                     puedeVerEquipos = canViewProcessEquipment,
                     puedeAgregarEquipos = canCreateProcessEquipment && order.codigoEstado != 0 && order.codigoEstado != 3,
+                    puedeVerCostos = canViewProcessCosts || canCreateProcessCosts || canEditProcessCosts || canDeleteProcessCosts,
+                    puedeAgregarCostos = canCreateProcessCosts && order.codigoEstado != 0 && order.codigoEstado != 3,
                     onOpenSections = { costsSheetState.targetDetent = BottomSheetDetent.FullyExpanded },
                     onAddProcess = {
                         viewModel.cargarEtapasProceso(ordenId)
@@ -248,6 +275,7 @@ fun OrdenTrabajoDetalleScreen(
                         viewModel.cargarOpcionesEquipo(ordenId, process.id)
                         onAssignEquipment(process.id)
                     },
+                    onManageCosts = { process -> onManageProcessCosts(process.id) },
                 )
                 ComposablesTheme {
                     BottomSheet(
@@ -431,11 +459,14 @@ private fun OrderOverview(
     puedeAgregarTrabajos: Boolean,
     puedeVerEquipos: Boolean,
     puedeAgregarEquipos: Boolean,
+    puedeVerCostos: Boolean,
+    puedeAgregarCostos: Boolean,
     onOpenSections: () -> Unit,
     onAddProcess: () -> Unit,
     onEditOrder: () -> Unit,
     onAddWork: (ProcesoOrdenTrabajo) -> Unit,
     onAddEquipment: (ProcesoOrdenTrabajo) -> Unit,
+    onManageCosts: (ProcesoOrdenTrabajo) -> Unit,
 ) {
     val order = detalle.orden
     Column(
@@ -510,6 +541,9 @@ private fun OrderOverview(
                             mostrarEquipos = puedeVerEquipos,
                             puedeAgregarEquipo = puedeAgregarEquipos && openProcess,
                             onAddEquipment = { onAddEquipment(process) },
+                            puedeVerCostos = puedeVerCostos,
+                            puedeAgregarCostos = puedeAgregarCostos && openProcess,
+                            onManageCosts = { onManageCosts(process) },
                         )
                         if (index < detalle.procesos.lastIndex) Spacer(Modifier.height(9.dp))
                     }
@@ -1034,6 +1068,9 @@ private fun ProcessCard(
     mostrarEquipos: Boolean,
     puedeAgregarEquipo: Boolean,
     onAddEquipment: () -> Unit,
+    puedeVerCostos: Boolean,
+    puedeAgregarCostos: Boolean,
+    onManageCosts: () -> Unit,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1122,6 +1159,14 @@ private fun ProcessCard(
                     onClick = onAddEquipment,
                     modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
                 ) { Text("+ Asignar equipo", color = DetailTeal, fontWeight = FontWeight.SemiBold) }
+            }
+            if (puedeVerCostos || puedeAgregarCostos) {
+                TextButton(
+                    onClick = onManageCosts,
+                    modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
+                ) {
+                    Text("Costos del proceso${if (process.costos.isNotEmpty()) " (${process.costos.size})" else ""}", color = DetailTeal, fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }
