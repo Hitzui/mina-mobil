@@ -1,14 +1,12 @@
 package com.jomiro.app.mina_mobil.screen.ordenes.listado
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,8 +17,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -83,7 +79,7 @@ fun MaterialesProcesoScreen(
     LaunchedEffect(ordenId, process.id) { load() }
 
     if (showForm && options != null) {
-        MaterialFormDialog(
+        MaterialFormScreen(
             options = options!!,
             saving = saving,
             error = error,
@@ -129,36 +125,38 @@ fun MaterialesProcesoScreen(
         )
     }
 
-    Column(
-        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onBack) { Text("‹ Volver", color = MaterialTeal) }
-            Column(Modifier.weight(1f)) {
-                Text("Materia prima consumida", color = MaterialInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Text("${process.codigo} · ${process.etapa.orEmpty()}", color = MaterialMuted, fontSize = 13.sp)
+    if (!showForm || options == null) {
+        Column(
+            modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onBack) { Text("‹ Volver", color = MaterialTeal) }
+                Column(Modifier.weight(1f)) {
+                    Text("Materia prima consumida", color = MaterialInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                    Text("${process.codigo} · ${process.etapa.orEmpty()}", color = MaterialMuted, fontSize = 13.sp)
+                }
+                if (canCreate && process.estado != "Finalizado" && process.estado != "Cancelado") {
+                    Button(
+                        onClick = { error = null; showForm = true },
+                        enabled = options?.productos?.isNotEmpty() == true,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTeal),
+                    ) { Text("+ Registrar consumo") }
+                }
             }
-            if (canCreate && process.estado != "Finalizado" && process.estado != "Cancelado") {
-                Button(
-                    onClick = { error = null; showForm = true },
-                    enabled = options?.productos?.isNotEmpty() != false,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTeal),
-                ) { Text("+ Registrar consumo") }
+            Surface(color = Color(0xFFF8F9FA), shape = RoundedCornerShape(12.dp)) {
+                Text(
+                    "Cemento, químicos, reactivos: lo que se gasta en este proceso. Al registrar el consumo el material se descuenta del almacén y su costo entra al total de este proceso con el valor del costo promedio del almacén, no con un precio escrito aquí. Si el material aún no tiene costo cargado, el consumo sumará cero.",
+                    modifier = Modifier.padding(14.dp), color = MaterialMuted, fontSize = 13.sp,
+                )
             }
-        }
-        Surface(color = Color(0xFFF8F9FA), shape = RoundedCornerShape(12.dp)) {
-            Text(
-                "Cemento, químicos, reactivos: lo que se gasta en este proceso. Al registrar el consumo el material se descuenta del almacén y su costo entra al total de este proceso con el valor del costo promedio del almacén, no con un precio escrito aquí. Si el material aún no tiene costo cargado, el consumo sumará cero.",
-                modifier = Modifier.padding(14.dp), color = MaterialMuted, fontSize = 13.sp,
-            )
-        }
-        error?.takeIf { !showForm }?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp) }
-        when {
-            loading -> CircularProgressIndicator(color = MaterialTeal, modifier = Modifier.align(Alignment.CenterHorizontally).padding(24.dp))
-            materials.isEmpty() -> Text("No hay consumos registrados en este proceso.", color = MaterialMuted, modifier = Modifier.padding(vertical = 16.dp))
-            else -> materials.forEach { material ->
-                MaterialCard(material, canDelete) { deleteTarget = material }
+            error?.takeIf { !showForm }?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp) }
+            when {
+                loading -> CircularProgressIndicator(color = MaterialTeal, modifier = Modifier.align(Alignment.CenterHorizontally).padding(24.dp))
+                materials.isEmpty() -> Text("No hay consumos registrados en este proceso.", color = MaterialMuted, modifier = Modifier.padding(vertical = 16.dp))
+                else -> materials.forEach { material ->
+                    MaterialCard(material, canDelete) { deleteTarget = material }
+                }
             }
         }
     }
@@ -186,7 +184,7 @@ private fun MaterialCard(material: MaterialProcesoTrabajo, canDelete: Boolean, o
 }
 
 @Composable
-private fun MaterialFormDialog(
+private fun MaterialFormScreen(
     options: OpcionesMaterialProceso,
     saving: Boolean,
     error: String?,
@@ -197,58 +195,95 @@ private fun MaterialFormDialog(
     var date by remember { mutableStateOf(options.fecha) }
     var quantity by remember { mutableStateOf("") }
     var observations by remember { mutableStateOf("") }
-    var menuExpanded by remember { mutableStateOf(false) }
+    var showProductPicker by remember { mutableStateOf(false) }
+    var showDatePicker by remember { mutableStateOf(false) }
     val product = options.productos.firstOrNull { it.id == productId }
     val qty = quantity.toDoubleOrNull()
     val available = product?.existencia ?: 0.0
     val valid = product != null && date.length >= 10 && qty != null && qty > 0 && qty <= available + 0.0005
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Registrar consumo") },
-        text = {
-            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SelectMaterialField("Material", product?.let { "${it.codigo} · ${it.nombre} (${it.unidad})" } ?: "Seleccione", menuExpanded, { menuExpanded = !menuExpanded }) {
-                    options.productos.forEach { item ->
-                        DropdownMenuItem(
-                            text = { Text("${item.codigo} · ${item.nombre} (${item.unidad}) · ${item.existencia.materialNumber()} disponible") },
-                            onClick = { productId = item.id; quantity = ""; menuExpanded = false },
-                        )
-                    }
-                }
-                product?.let {
-                    Text("Disponible: ${available.materialNumber()} ${it.unidad}", color = MaterialMuted, fontSize = 12.sp)
-                    Text("Costo promedio: NIO ${it.costoPromedio.moneyNumber()} por ${it.unidad}", color = MaterialMuted, fontSize = 12.sp)
-                }
-                OutlinedTextField(value = date, onValueChange = { date = it }, label = { Text("Fecha (AAAA-MM-DD)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = quantity, onValueChange = { quantity = it }, label = { Text("Cantidad") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                if (product != null && qty != null && qty > 0) {
-                    Text("Costo aproximado: NIO ${(qty * product.costoPromedio).moneyNumber()}", color = MaterialTeal, fontWeight = FontWeight.SemiBold)
-                }
-                OutlinedTextField(value = observations, onValueChange = { observations = it }, label = { Text("Observaciones") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 3)
-                error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 12.sp) }
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(enabled = !saving, onClick = onDismiss) { Text("‹ Volver", color = MaterialTeal) }
+            Text("Registrar consumo", color = MaterialInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+        }
+        Button(
+            onClick = { showProductPicker = true },
+            modifier = Modifier.fillMaxWidth().height(62.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = MaterialInk),
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                Text("Material", color = MaterialMuted, fontSize = 11.sp)
+                Text(product?.let { "${it.codigo} · ${it.nombre} (${it.unidad})" } ?: "Seleccionar material", maxLines = 1)
             }
-        },
-        confirmButton = {
-            TextButton(enabled = valid && !saving, onClick = {
-                onSave(product!!, date, qty!!, observations.takeIf(String::isNotBlank))
-            }) { if (saving) CircularProgressIndicator(modifier = Modifier.height(18.dp), strokeWidth = 2.dp) else Text("Registrar", color = MaterialTeal) }
-        },
-        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text("Cancelar") } },
-    )
-}
+        }
+        product?.let {
+            Text("Disponible: ${available.materialNumber()} ${it.unidad}", color = MaterialMuted, fontSize = 12.sp)
+            Text("Costo promedio: NIO ${it.costoPromedio.moneyNumber()} por ${it.unidad}", color = MaterialMuted, fontSize = 12.sp)
+        }
+        Button(
+            onClick = { showDatePicker = true },
+            modifier = Modifier.fillMaxWidth().height(58.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = MaterialInk),
+        ) {
+            Column(Modifier.fillMaxWidth()) {
+                Text("Fecha", color = MaterialMuted, fontSize = 11.sp)
+                Text(date, color = MaterialInk)
+            }
+        }
+        OutlinedTextField(value = quantity, onValueChange = { quantity = it }, label = { Text("Cantidad") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        if (product != null && qty != null && qty > 0) {
+            Text("Costo aproximado: NIO ${(qty * product.costoPromedio).moneyNumber()}", color = MaterialTeal, fontWeight = FontWeight.SemiBold)
+        }
+        OutlinedTextField(value = observations, onValueChange = { observations = it }, label = { Text("Observaciones") }, modifier = Modifier.fillMaxWidth(), minLines = 2, maxLines = 4)
+        error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End)) {
+            TextButton(enabled = !saving, onClick = onDismiss) { Text("Cancelar", color = MaterialMuted) }
+            Button(
+                enabled = valid && !saving,
+                onClick = { onSave(product!!, date, qty!!, observations.takeIf(String::isNotBlank)) },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTeal),
+            ) {
+                if (saving) CircularProgressIndicator(modifier = Modifier.height(18.dp), strokeWidth = 2.dp, color = Color.White)
+                else Text("Registrar")
+            }
+        }
+    }
 
-@Composable
-private fun SelectMaterialField(
-    label: String,
-    value: String,
-    expanded: Boolean,
-    onClick: () -> Unit,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column {
-        OutlinedTextField(value = value, onValueChange = {}, readOnly = true, label = { Text(label) }, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick))
-        DropdownMenu(expanded = expanded, onDismissRequest = onClick, content = content)
+    if (showProductPicker) {
+        AlertDialog(
+            onDismissRequest = { showProductPicker = false },
+            title = { Text("Seleccionar material") },
+            text = {
+                Column(Modifier.fillMaxWidth().heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    options.productos.forEach { item ->
+                        TextButton(
+                            onClick = { productId = item.id; quantity = ""; showProductPicker = false },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.fillMaxWidth()) {
+                                Text("${item.codigo} · ${item.nombre}", color = if (item.id == productId) MaterialTeal else MaterialInk)
+                                Text("${item.unidad} · ${item.existencia.materialNumber()} disponible", color = MaterialMuted, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                    if (options.productos.isEmpty()) Text("No hay materiales disponibles.", color = MaterialMuted)
+                }
+            },
+            confirmButton = { TextButton(onClick = { showProductPicker = false }) { Text("Cerrar", color = MaterialTeal) } },
+        )
+    }
+    if (showDatePicker) {
+        DateSelectionDialog(
+            initialDate = date,
+            onSelect = { date = it.toString(); showDatePicker = false },
+            onDismiss = { showDatePicker = false },
+        )
     }
 }
 
