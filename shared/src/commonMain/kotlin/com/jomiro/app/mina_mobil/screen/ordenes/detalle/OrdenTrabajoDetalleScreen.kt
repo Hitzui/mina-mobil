@@ -132,7 +132,6 @@ fun OrdenTrabajoDetalleScreen(
     onSelectSection: (OrdenDetalleSeccion) -> Unit = {},
     showingSummary: Boolean = false,
     onOpenSummary: () -> Unit = {},
-    onCloseSummary: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: OrdenTrabajoDetalleViewModel = koinViewModel(),
 ) {
@@ -302,7 +301,6 @@ fun OrdenTrabajoDetalleScreen(
                     detalle = detail,
                     puedeVerCostos = canViewProcessCosts || canCreateProcessCosts || canEditProcessCosts || canDeleteProcessCosts,
                     puedeVerIngresos = canViewIncomes || canCreateIncomes || canEditIncomes || canDeleteIncomes,
-                    onBack = onCloseSummary,
                     modifier = modifier,
                 )
             } else if (seccion == null) {

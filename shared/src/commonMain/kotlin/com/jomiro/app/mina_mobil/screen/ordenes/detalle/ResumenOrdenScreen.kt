@@ -13,7 +13,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,7 +33,6 @@ fun ResumenOrdenScreen(
     detalle: DetalleOrdenTrabajo,
     puedeVerCostos: Boolean,
     puedeVerIngresos: Boolean,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val processCosts = detalle.procesos.associate { process -> process.id to directProcessCost(detalle, process) }
@@ -54,7 +52,6 @@ fun ResumenOrdenScreen(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        TextButton(onClick = onBack, modifier = Modifier.align(Alignment.Start)) { Text("← Volver a la orden", color = SummaryTeal) }
         Text("Resumen operativo y financiero", color = SummaryInk, fontSize = 21.sp, fontWeight = FontWeight.Bold)
         Text("${detalle.orden.codigo} · ${detalle.orden.cliente ?: "Sin cliente"}", color = SummaryMuted, fontSize = 13.sp)
 

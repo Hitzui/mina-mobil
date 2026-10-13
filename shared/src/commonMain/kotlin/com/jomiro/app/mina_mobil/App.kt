@@ -552,7 +552,6 @@ private fun SignedInScreen(
                             onSelectSection = { selectedOrderSection = it },
                             showingSummary = showingOrderSummary,
                             onOpenSummary = { showingOrderSummary = true },
-                            onCloseSummary = { showingOrderSummary = false },
                             modifier = Modifier.padding(contentPadding),
                         )
                     }
