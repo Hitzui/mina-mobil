@@ -107,7 +107,7 @@ class OfflineSyncRepository(
             localId = if (localEntityType != null) localEntityId
                 ?: database.clientCacheQueries.nextOfflineEntityId(ownerId).executeAsOne() else 0L
             val payloadWithId = if (localEntityType != null) {
-                kotlinx.serialization.json.buildJsonObject {
+                buildJsonObject {
                     payload.forEach { (key, value) -> put(key, value) }
                     put("local_id", kotlinx.serialization.json.JsonPrimitive(localId))
                 }
