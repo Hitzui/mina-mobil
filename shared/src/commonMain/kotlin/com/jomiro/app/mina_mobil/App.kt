@@ -58,8 +58,8 @@ import com.jomiro.app.mina_mobil.login.LoginViewModel
 import com.jomiro.app.mina_mobil.screen.clientes.listado.ClientesListadoScreen
 import com.jomiro.app.mina_mobil.screen.empleados.listado.EmpleadosScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoScreen
-import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenTrabajoDetalleScreen
-import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenDetalleSeccion
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.OrdenTrabajoDetalleScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.OrdenDetalleSeccion
 import com.jomiro.app.mina_mobil.screen.sync.OfflineSyncScreen
 import com.jomiro.app.mina_mobil.data.OfflineSyncRepository
 import com.jomiro.app.mina_mobil.data.ConnectionMode
@@ -107,6 +107,14 @@ fun App() {
                     canViewProcessMaterials = "movimientos_inventario.view" in session.permissions,
                     canCreateProcessMaterials = "movimientos_inventario.create" in session.permissions,
                     canDeleteProcessMaterials = "movimientos_inventario.delete" in session.permissions,
+                    canViewAgreements = "acuerdos_orden.view" in session.permissions,
+                    canCreateAgreements = "acuerdos_orden.create" in session.permissions,
+                    canEditAgreements = "acuerdos_orden.edit" in session.permissions,
+                    canDeleteAgreements = "acuerdos_orden.delete" in session.permissions,
+                    canViewLiquidations = "liquidaciones.view" in session.permissions,
+                    canCreateLiquidations = "liquidaciones.create" in session.permissions,
+                    canEditLiquidations = "liquidaciones.edit" in session.permissions,
+                    canDeleteLiquidations = "liquidaciones.delete" in session.permissions,
                     onLogout = viewModel::logout,
                 )
             } else {
@@ -262,6 +270,14 @@ private fun SignedInScreen(
     canViewProcessMaterials: Boolean,
     canCreateProcessMaterials: Boolean,
     canDeleteProcessMaterials: Boolean,
+    canViewAgreements: Boolean,
+    canCreateAgreements: Boolean,
+    canEditAgreements: Boolean,
+    canDeleteAgreements: Boolean,
+    canViewLiquidations: Boolean,
+    canCreateLiquidations: Boolean,
+    canEditLiquidations: Boolean,
+    canDeleteLiquidations: Boolean,
     onLogout: () -> Unit,
 ) {
     val offlineSyncRepository: OfflineSyncRepository = koinInject()
@@ -491,6 +507,14 @@ private fun SignedInScreen(
                             canViewProcessMaterials = canViewProcessMaterials,
                             canCreateProcessMaterials = canCreateProcessMaterials,
                             canDeleteProcessMaterials = canDeleteProcessMaterials,
+                            canViewAgreements = canViewAgreements,
+                            canCreateAgreements = canCreateAgreements,
+                            canEditAgreements = canEditAgreements,
+                            canDeleteAgreements = canDeleteAgreements,
+                            canViewLiquidations = canViewLiquidations,
+                            canCreateLiquidations = canCreateLiquidations,
+                            canEditLiquidations = canEditLiquidations,
+                            canDeleteLiquidations = canDeleteLiquidations,
                             equipmentProcessId = equipmentProcessId,
                             workProcessId = workProcessId,
                             costProcessId = costProcessId,

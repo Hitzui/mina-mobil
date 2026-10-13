@@ -181,14 +181,24 @@ data class IngresoOrdenTrabajo(
 
 data class AcuerdoOrdenTrabajo(
     val id: Long,
+    val tipoParticipacionId: Long = 0,
     val tipoParticipacion: String?,
     val modalidad: String,
     val porcentajeCliente: String?,
     val porcentajeEmpresa: String?,
     val tarifaServicio: String?,
     val moneda: String?,
+    val monedaId: Long = 0,
     val observaciones: String?,
     val activo: Boolean,
+)
+
+data class TipoParticipacionOpcion(val id: Long, val nombre: String)
+data class MonedaAcuerdoOpcion(val id: Long, val codigo: String, val nombre: String, val monedaBase: Boolean)
+data class OpcionesAcuerdoOrden(
+    val tipos: List<TipoParticipacionOpcion>,
+    val monedas: List<MonedaAcuerdoOpcion>,
+    val monedaBaseId: Long?,
 )
 
 data class LiquidacionOrdenTrabajo(
@@ -200,4 +210,16 @@ data class LiquidacionOrdenTrabajo(
     val porcentajeCliente: String?,
     val porcentajeEmpresa: String?,
     val observaciones: String?,
+)
+
+data class AcuerdoLiquidacionOpcion(
+    val id: Long,
+    val tipoParticipacion: String?,
+    val porcentajeCliente: Double,
+    val porcentajeEmpresa: Double,
+)
+
+data class OpcionesLiquidacionOrden(
+    val fecha: String,
+    val acuerdos: List<AcuerdoLiquidacionOpcion>,
 )

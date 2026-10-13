@@ -1,53 +1,16 @@
-package com.jomiro.app.mina_mobil.screen.ordenes.listado
+package com.jomiro.app.mina_mobil.screen.ordenes.detalle
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.jomiro.app.mina_mobil.data.ordenes.DetalleOrdenTrabajo
-import com.jomiro.app.mina_mobil.data.ordenes.EtapaOpcionProceso
-import com.jomiro.app.mina_mobil.data.ordenes.OpcionesTrabajoEmpleado
-import com.jomiro.app.mina_mobil.data.ordenes.TarifaTrabajoEmpleado
-import com.jomiro.app.mina_mobil.data.ordenes.OpcionesEquipoProceso
-import com.jomiro.app.mina_mobil.data.ordenes.DepreciacionEquipoProceso
-import com.jomiro.app.mina_mobil.data.ordenes.FormularioEdicionOrden
+import com.jomiro.app.mina_mobil.data.ordenes.AcuerdoOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.LiquidacionOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.AcuerdoLiquidacionOpcion
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenesRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-data class OrdenTrabajoDetalleUiState(
-    val detalle: DetalleOrdenTrabajo? = null,
-    val cargando: Boolean = false,
-    val error: String? = null,
-    val finalizandoOrden: Boolean = false,
-    val finalizacionExitosa: Boolean = false,
-    val errorFinalizacion: String? = null,
-    val etapasProceso: List<EtapaOpcionProceso> = emptyList(),
-    val cargandoEtapasProceso: Boolean = false,
-    val creandoProceso: Boolean = false,
-    val procesoAgregado: Boolean = false,
-    val errorProceso: String? = null,
-    val opcionesTrabajo: OpcionesTrabajoEmpleado? = null,
-    val cargandoOpcionesTrabajo: Boolean = false,
-    val tarifaTrabajo: TarifaTrabajoEmpleado? = null,
-    val cargandoTarifaTrabajo: Boolean = false,
-    val creandoTrabajo: Boolean = false,
-    val trabajoAgregado: Boolean = false,
-    val errorTrabajo: String? = null,
-    val opcionesEquipo: OpcionesEquipoProceso? = null,
-    val cargandoOpcionesEquipo: Boolean = false,
-    val depreciacionEquipo: DepreciacionEquipoProceso? = null,
-    val calculandoDepreciacionEquipo: Boolean = false,
-    val asignandoEquipo: Boolean = false,
-    val equipoAsignado: Boolean = false,
-    val errorEquipo: String? = null,
-    val formularioEdicion: FormularioEdicionOrden? = null,
-    val cargandoFormularioEdicion: Boolean = false,
-    val guardandoEdicion: Boolean = false,
-    val edicionGuardada: Boolean = false,
-    val errorEdicion: String? = null,
-)
 
 class OrdenTrabajoDetalleViewModel(
     private val repository: OrdenesRepository,
@@ -430,5 +393,101 @@ class OrdenTrabajoDetalleViewModel(
                 errorEdicion = null,
             )
         }
+    }
+
+    fun cargarOpcionesAcuerdo() {
+        if (mutableState.value.cargandoOpcionesAcuerdo || mutableState.value.opcionesAcuerdo != null) return
+        mutableState.update { it.copy(cargandoOpcionesAcuerdo = true, errorAcuerdo = null) }
+        viewModelScope.launch {
+            runCatching { repository.opcionesAcuerdo() }
+                .onSuccess { options -> mutableState.update { it.copy(opcionesAcuerdo = options, cargandoOpcionesAcuerdo = false) } }
+                .onFailure { error -> mutableState.update { it.copy(cargandoOpcionesAcuerdo = false, errorAcuerdo = error.message ?: "No se pudieron cargar las opciones de acuerdos.") } }
+        }
+    }
+
+    fun guardarAcuerdo(
+        orderId: Long,
+        agreementId: Long?,
+        typeId: Long,
+        clientPercentage: Double?,
+        companyPercentage: Double?,
+        serviceFee: Double?,
+        currencyId: Long,
+        observations: String,
+        active: Boolean,
+    ) {
+        if (mutableState.value.guardandoAcuerdo) return
+        mutableState.update { it.copy(guardandoAcuerdo = true, acuerdoGuardado = false, errorAcuerdo = null) }
+        viewModelScope.launch {
+            runCatching {
+                repository.guardarAcuerdo(orderId, agreementId, typeId, clientPercentage, companyPercentage, serviceFee, currencyId, observations, active)
+                repository.detalle(orderId)
+            }.onSuccess { detail ->
+                mutableState.update { it.copy(detalle = detail, guardandoAcuerdo = false, acuerdoGuardado = true) }
+            }.onFailure { error ->
+                mutableState.update { it.copy(guardandoAcuerdo = false, errorAcuerdo = error.message ?: "No se pudo guardar el acuerdo.") }
+            }
+        }
+    }
+
+    fun eliminarAcuerdo(orderId: Long, agreement: AcuerdoOrdenTrabajo) {
+        if (mutableState.value.eliminandoAcuerdo) return
+        mutableState.update { it.copy(eliminandoAcuerdo = true, acuerdoGuardado = false, errorAcuerdo = null) }
+        viewModelScope.launch {
+            runCatching {
+                repository.eliminarAcuerdo(orderId, agreement)
+                repository.detalle(orderId)
+            }.onSuccess { detail -> mutableState.update { it.copy(detalle = detail, eliminandoAcuerdo = false, acuerdoGuardado = true) } }
+                .onFailure { error -> mutableState.update { it.copy(eliminandoAcuerdo = false, errorAcuerdo = error.message ?: "No se pudo eliminar el acuerdo.") } }
+        }
+    }
+
+    fun limpiarResultadoAcuerdo() {
+        mutableState.update { it.copy(acuerdoGuardado = false, errorAcuerdo = null) }
+    }
+
+    fun cargarOpcionesLiquidacion(orderId: Long) {
+        if (mutableState.value.cargandoOpcionesLiquidacion || mutableState.value.opcionesLiquidacion != null) return
+        mutableState.update { it.copy(cargandoOpcionesLiquidacion = true, errorLiquidacion = null) }
+        viewModelScope.launch {
+            runCatching { repository.opcionesLiquidacion(orderId) }
+                .onSuccess { options -> mutableState.update { it.copy(opcionesLiquidacion = options, cargandoOpcionesLiquidacion = false) } }
+                .onFailure { error -> mutableState.update { it.copy(cargandoOpcionesLiquidacion = false, errorLiquidacion = error.message ?: "No se pudieron cargar los acuerdos liquidables.") } }
+        }
+    }
+
+    fun guardarLiquidacion(
+        orderId: Long,
+        liquidation: LiquidacionOrdenTrabajo?,
+        date: String,
+        grams: Double,
+        agreement: AcuerdoLiquidacionOpcion?,
+        observations: String,
+    ) {
+        if (mutableState.value.guardandoLiquidacion) return
+        mutableState.update { it.copy(guardandoLiquidacion = true, liquidacionGuardada = false, errorLiquidacion = null) }
+        viewModelScope.launch {
+            runCatching {
+                repository.guardarLiquidacion(orderId, liquidation, date, grams, agreement, observations)
+                repository.detalle(orderId)
+            }.onSuccess { detail -> mutableState.update { it.copy(detalle = detail, guardandoLiquidacion = false, liquidacionGuardada = true) } }
+                .onFailure { error -> mutableState.update { it.copy(guardandoLiquidacion = false, errorLiquidacion = error.message ?: "No se pudo guardar la liquidación.") } }
+        }
+    }
+
+    fun eliminarLiquidacion(orderId: Long, liquidation: LiquidacionOrdenTrabajo) {
+        if (mutableState.value.eliminandoLiquidacion) return
+        mutableState.update { it.copy(eliminandoLiquidacion = true, liquidacionGuardada = false, errorLiquidacion = null) }
+        viewModelScope.launch {
+            runCatching {
+                repository.eliminarLiquidacion(orderId, liquidation)
+                repository.detalle(orderId)
+            }.onSuccess { detail -> mutableState.update { it.copy(detalle = detail, eliminandoLiquidacion = false, liquidacionGuardada = true) } }
+                .onFailure { error -> mutableState.update { it.copy(eliminandoLiquidacion = false, errorLiquidacion = error.message ?: "No se pudo eliminar la liquidación.") } }
+        }
+    }
+
+    fun limpiarResultadoLiquidacion() {
+        mutableState.update { it.copy(liquidacionGuardada = false, errorLiquidacion = null) }
     }
 }

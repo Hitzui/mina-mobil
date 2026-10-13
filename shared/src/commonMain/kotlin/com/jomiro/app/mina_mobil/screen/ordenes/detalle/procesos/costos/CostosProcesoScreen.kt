@@ -1,4 +1,4 @@
-package com.jomiro.app.mina_mobil.screen.ordenes.listado
+package com.jomiro.app.mina_mobil.screen.ordenes.detalle.procesos.costos
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -40,6 +40,7 @@ import com.jomiro.app.mina_mobil.data.ordenes.CostoProcesoTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.MonedaCostoOpcion
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenesRepository
 import com.jomiro.app.mina_mobil.data.ordenes.ProcesoOrdenTrabajo
+import com.jomiro.app.mina_mobil.screen.ordenes.componentes.DateSelectionDialog
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 

@@ -12,7 +12,7 @@ import com.jomiro.app.mina_mobil.network.resolvedApiBaseUrl
 import com.jomiro.app.mina_mobil.screen.clientes.listado.ClientesListadoViewModel
 import com.jomiro.app.mina_mobil.screen.empleados.listado.EmpleadosViewModel
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoViewModel
-import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenTrabajoDetalleViewModel
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.OrdenTrabajoDetalleViewModel
 import com.jomiro.app.mina_mobil.screen.sync.OfflineSyncViewModel
 import io.ktor.client.HttpClient
 import org.koin.core.KoinApplication

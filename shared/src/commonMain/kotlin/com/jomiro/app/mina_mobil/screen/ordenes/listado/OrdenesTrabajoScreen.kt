@@ -54,6 +54,8 @@ import com.jomiro.app.mina_mobil.data.ordenes.OrdenTrabajo
 import com.jomiro.app.mina_mobil.data.clientes.Cliente
 import com.composables.ui.components.AlertDialog as ComposablesAlertDialog
 import com.composables.ui.theme.ComposablesTheme
+import com.jomiro.app.mina_mobil.screen.ordenes.componentes.DateSelectionDialog
+import com.jomiro.app.mina_mobil.screen.ordenes.componentes.toDisplayDate
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.daysUntil
@@ -523,72 +525,6 @@ private fun ClientSelectionDialog(
         }
     }
 }
-
-@Composable
-internal fun DateSelectionDialog(initialDate: String?, onSelect: (LocalDate) -> Unit, onDismiss: () -> Unit) {
-    val today = kotlin.time.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date
-    var selectedDate by remember { mutableStateOf(initialDate?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: today) }
-    var displayedMonth by remember { mutableStateOf(LocalDate(selectedDate.year, selectedDate.month, 1)) }
-    ComposablesTheme {
-        ComposablesAlertDialog(
-            visible = true,
-            onDismissRequest = onDismiss,
-            paneTitle = "Seleccionar fecha",
-        ) {
-            Column {
-                Text("Seleccionar fecha", color = Ink, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                    MonthButton("‹") { displayedMonth = displayedMonth.minus(1, DateTimeUnit.MONTH) }
-                    Text("${MonthNames[displayedMonth.month.ordinal].replaceFirstChar { it.uppercase() }} ${displayedMonth.year}", color = Ink, fontWeight = FontWeight.SemiBold)
-                    MonthButton("›") { displayedMonth = displayedMonth.plus(1, DateTimeUnit.MONTH) }
-                }
-                Row(Modifier.fillMaxWidth()) {
-                    CalendarWeekdays.forEach { day ->
-                        Box(Modifier.weight(1f).height(30.dp), contentAlignment = Alignment.Center) {
-                            Text(day, color = Muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-                val firstDay = LocalDate(displayedMonth.year, displayedMonth.month, 1)
-                val daysInMonth = firstDay.daysUntil(firstDay.plus(1, DateTimeUnit.MONTH))
-                val calendarDays: List<LocalDate?> = buildList {
-                    repeat(firstDay.dayOfWeek.ordinal) { add(null) }
-                    for (day in 0 until daysInMonth) add(firstDay.plus(day, DateTimeUnit.DAY))
-                    while (size % 7 != 0) add(null)
-                }
-                calendarDays.chunked(7).forEach { week ->
-                    Row(Modifier.fillMaxWidth()) {
-                        week.forEach { date ->
-                            Box(Modifier.weight(1f).height(40.dp).padding(2.dp)) {
-                                if (date != null) {
-                                    Surface(
-                                        modifier = Modifier.fillMaxSize().clickable { selectedDate = date },
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = if (date == selectedDate) Teal else Color.Transparent,
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Text(date.day.toString(), color = if (date == selectedDate) Color.White else Ink, fontSize = 13.sp)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss) { Text("Cancelar", color = Muted) }
-                    TextButton(onClick = { onSelect(selectedDate) }) { Text("Aceptar", color = Teal) }
-                }
-            }
-        }
-    }
-}
-
-internal fun String.toDisplayDate(): String = runCatching {
-    val date = LocalDate.parse(this)
-    "${date.day.toString().padStart(2, '0')}/${(date.month.ordinal + 1).toString().padStart(2, '0')}/${date.year}"
-}.getOrElse { this }
 
 @Composable
 private fun filterFieldColors() = OutlinedTextFieldDefaults.colors(

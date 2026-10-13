@@ -480,6 +480,202 @@ class OrdenesRepository(
         return parseOrderDetail(body)
     }
 
+    suspend fun opcionesAcuerdo(): OpcionesAcuerdoOrden {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val catalogs = offlineSync.offlineSnapshot(session.userId)?.get("catalogs")?.jsonObject
+        if (catalogs != null) {
+            val types = ApiJson.instance.decodeFromString<List<ParticipationTypeDto>>(
+                catalogs["participation_types"]?.toString() ?: "[]",
+            ).map { TipoParticipacionOpcion(it.id, it.name) }
+            val currencies = ApiJson.instance.decodeFromString<List<AgreementCurrencyDto>>(
+                catalogs["agreement_currencies"]?.toString() ?: "[]",
+            ).map { MonedaAcuerdoOpcion(it.id, it.code, it.name, it.isBaseCurrency) }
+            return OpcionesAcuerdoOrden(types, currencies, currencies.firstOrNull(MonedaAcuerdoOpcion::monedaBase)?.id)
+        }
+        val response = client.get("${baseUrl.trimEnd('/')}/agreement-options") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar las opciones del acuerdo.")
+        return runCatching { ApiJson.instance.decodeFromString<AgreementOptionsResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("No se pudieron interpretar las opciones del acuerdo.") }
+    }
+
+    suspend fun guardarAcuerdo(
+        ordenId: Long,
+        acuerdoId: Long?,
+        tipoId: Long,
+        porcentajeCliente: Double?,
+        porcentajeEmpresa: Double?,
+        tarifa: Double?,
+        monedaId: Long,
+        observaciones: String,
+        activo: Boolean,
+    ) {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val payload = buildJsonObject {
+            put("order_id", ordenId)
+            acuerdoId?.let { put("agreement_id", it) }
+            put("participation_type_id", tipoId)
+            porcentajeCliente?.let { put("client_percentage", it) }
+            porcentajeEmpresa?.let { put("company_percentage", it) }
+            tarifa?.let { put("service_fee", it) }
+            put("currency_id", monedaId)
+            put("observations", observaciones)
+            put("active", activo)
+        }
+        if (offlineSync.isOfflineMode(session.userId)) {
+            val agreementOptions = opcionesAcuerdo()
+            val opType = if (acuerdoId == null) "agreement.create" else "agreement.update"
+            offlineSync.enqueueOperation(
+                session.userId, opType, payload, "agreement", acuerdoId,
+            ) { localId ->
+                buildJsonObject {
+                    put("id", acuerdoId ?: localId)
+                    put("order_id", ordenId)
+                    put("participation_type_id", tipoId)
+                    put("participation_type", agreementOptions.tipos.firstOrNull { it.id == tipoId }?.nombre.orEmpty())
+                    put("modality", if (tarifa != null) "tarifa" else "porcentaje")
+                    porcentajeCliente?.let { put("client_percentage", it) }
+                    porcentajeEmpresa?.let { put("company_percentage", it) }
+                    tarifa?.let { put("service_fee", it) }
+                    put("currency_id", monedaId)
+                    put("currency", agreementOptions.monedas.firstOrNull { it.id == monedaId }?.codigo.orEmpty())
+                    put("observations", observaciones)
+                    put("active", activo)
+                }
+            }
+            return
+        }
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/agreements" + (acuerdoId?.let { "/$it" } ?: "")
+        val response = if (acuerdoId == null) client.post(endpoint) {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+            contentType(ContentType.Application.Json)
+            setBody(payload)
+        } else client.put(endpoint) {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+            contentType(ContentType.Application.Json)
+            setBody(payload)
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudo guardar el acuerdo.")
+    }
+
+    suspend fun eliminarAcuerdo(ordenId: Long, acuerdo: AcuerdoOrdenTrabajo) {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.isOfflineMode(session.userId)) {
+            val payload = buildJsonObject { put("order_id", ordenId); put("agreement_id", acuerdo.id) }
+            offlineSync.enqueueOperation(session.userId, "agreement.delete", payload, "agreement_deleted", acuerdo.id) {
+                buildJsonObject { put("id", acuerdo.id); put("order_id", ordenId) }
+            }
+            return
+        }
+        val response = client.delete("${baseUrl.trimEnd('/')}/orders/$ordenId/agreements/${acuerdo.id}") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        if (response.status.value !in 200..299) throw apiException(response.bodyAsText(), "No se pudo eliminar el acuerdo.")
+    }
+
+    suspend fun opcionesLiquidacion(ordenId: Long): OpcionesLiquidacionOrden {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val snapshot = offlineSync.offlineSnapshot(session.userId)
+        if (snapshot != null) {
+            val order = snapshot["orders"]?.let { raw ->
+                runCatching { ApiJson.instance.decodeFromString<List<OrdenTrabajoDetalleDto>>(raw.toString()) }.getOrNull()
+            }.orEmpty().firstOrNull { it.id == ordenId }
+                ?: throw OrdenesException("No se encontró la orden en la descarga local.")
+            return OpcionesLiquidacionOrden(
+                fecha = kotlin.time.Clock.System.now().toString().take(10),
+                acuerdos = order.liquidationAgreements.map { it.toModel() },
+            )
+        }
+        val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/liquidation-options") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar los acuerdos aplicables.")
+        return runCatching { ApiJson.instance.decodeFromString<LiquidationOptionsResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("No se pudieron interpretar las opciones de liquidación.") }
+    }
+
+    suspend fun guardarLiquidacion(
+        ordenId: Long,
+        liquidacion: LiquidacionOrdenTrabajo?,
+        fecha: String,
+        gramos: Double,
+        acuerdo: AcuerdoLiquidacionOpcion?,
+        observaciones: String,
+    ) {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (liquidacion == null && acuerdo == null) throw OrdenesException("Seleccione un acuerdo porcentual para distribuir los gramos.")
+        val payload = buildJsonObject {
+            put("order_id", ordenId)
+            liquidacion?.let { put("liquidation_id", it.id) }
+            acuerdo?.let { put("agreement_id", it.id) }
+            put("date", fecha)
+            put("recovered_grams", gramos)
+            put("observations", observaciones)
+        }
+        if (offlineSync.isOfflineMode(session.userId)) {
+            if (liquidacion == null && acuerdo != null) {
+                offlineSync.enqueueOperation(session.userId, "liquidation.create", payload, "liquidation") { localId ->
+                    val roundedGrams = roundFour(gramos)
+                    val clientGrams = roundFour(roundedGrams * acuerdo.porcentajeCliente / 100.0)
+                    buildJsonObject {
+                        put("id", localId); put("order_id", ordenId); put("date", fecha)
+                        put("recovered_grams", roundedGrams); put("client_grams", clientGrams)
+                        put("company_grams", roundFour(roundedGrams - clientGrams))
+                        put("client_percentage", acuerdo.porcentajeCliente); put("company_percentage", acuerdo.porcentajeEmpresa)
+                        put("participation_type", acuerdo.tipoParticipacion.orEmpty())
+                        put("observations", observaciones)
+                    }
+                }
+            } else if (liquidacion != null) {
+                offlineSync.enqueueOperation(session.userId, "liquidation.update", payload, "liquidation", liquidacion.id) {
+                    val roundedGrams = roundFour(gramos)
+                    val clientGrams = roundFour(roundedGrams * (liquidacion.porcentajeCliente?.toDoubleOrNull() ?: 0.0) / 100.0)
+                    buildJsonObject {
+                        put("id", liquidacion.id); put("order_id", ordenId); put("date", fecha)
+                        put("recovered_grams", roundedGrams); put("client_grams", clientGrams)
+                        put("company_grams", roundFour(roundedGrams - clientGrams))
+                        put("client_percentage", liquidacion.porcentajeCliente?.toDoubleOrNull() ?: 0.0)
+                        put("company_percentage", liquidacion.porcentajeEmpresa?.toDoubleOrNull() ?: 0.0)
+                        put("observations", observaciones)
+                    }
+                }
+            }
+            return
+        }
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/liquidations" +
+            (liquidacion?.let { "/${it.id}" } ?: "")
+        val response = if (liquidacion == null) client.post(endpoint) {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+            contentType(ContentType.Application.Json)
+            setBody(payload)
+        } else client.put(endpoint) {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+            contentType(ContentType.Application.Json)
+            setBody(payload)
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudo guardar la liquidación.")
+    }
+
+    suspend fun eliminarLiquidacion(ordenId: Long, liquidacion: LiquidacionOrdenTrabajo) {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.isOfflineMode(session.userId)) {
+            val payload = buildJsonObject { put("order_id", ordenId); put("liquidation_id", liquidacion.id) }
+            offlineSync.enqueueOperation(session.userId, "liquidation.delete", payload, "liquidation_deleted", liquidacion.id) {
+                buildJsonObject { put("id", liquidacion.id); put("order_id", ordenId) }
+            }
+            return
+        }
+        val response = client.delete("${baseUrl.trimEnd('/')}/orders/$ordenId/liquidations/${liquidacion.id}") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        if (response.status.value !in 200..299) throw apiException(response.bodyAsText(), "No se pudo eliminar la liquidación.")
+    }
+
     suspend fun finalizar(id: Long) {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
@@ -951,6 +1147,14 @@ class OrdenesRepository(
             .mapNotNull { runCatching { ApiJson.instance.decodeFromString<TrabajoEmpleadoDto>(it.payload.toString()) }.getOrNull() }
         val localEquipment = local.filter { it.type == "equipment" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
             .mapNotNull { runCatching { ApiJson.instance.decodeFromString<EquipoProcesoDto>(it.payload.toString()) }.getOrNull() }
+        val localLiquidations = local.filter { it.type == "liquidation" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
+            .mapNotNull { runCatching { ApiJson.instance.decodeFromString<LiquidacionOrdenDto>(it.payload.toString()) }.getOrNull() }
+        val deletedLiquidationIds = local.filter { it.type == "liquidation_deleted" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
+            .mapNotNull { it.payload["id"]?.jsonPrimitive?.content?.toLongOrNull() }.toSet()
+        val localAgreements = local.filter { it.type == "agreement" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
+            .mapNotNull { runCatching { ApiJson.instance.decodeFromString<AcuerdoOrdenDto>(it.payload.toString()) }.getOrNull() }
+        val deletedAgreementIds = local.filter { it.type == "agreement_deleted" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
+            .mapNotNull { it.payload["id"]?.jsonPrimitive?.content?.toLongOrNull() }.toSet()
         val localCostRows = local.filter { it.type == "process_cost" || it.type == "process_cost_deleted" }
             .filter { it.payload["process_id"]?.jsonPrimitive?.content?.toLongOrNull() in
                 (orderDto.processes + localProcesses).map { process -> process.id } }
@@ -977,6 +1181,10 @@ class OrdenesRepository(
             processes = mergedProcesses,
             employeeWork = (orderDto.employeeWork + localWorks).distinctBy { it.id },
             equipment = (orderDto.equipment + localEquipment).distinctBy { it.id },
+            agreements = (orderDto.agreements.filterNot { it.id in deletedAgreementIds || localAgreements.any { localAgreement -> localAgreement.id == it.id } } +
+                localAgreements.filterNot { it.id in deletedAgreementIds }).distinctBy { it.id },
+            liquidations = (orderDto.liquidations.filterNot { it.id in deletedLiquidationIds || localLiquidations.any { localLiquidation -> localLiquidation.id == it.id } } +
+                localLiquidations.filterNot { it.id in deletedLiquidationIds }).distinctBy { it.id },
         ).toModel()
     }
 
@@ -1481,12 +1689,14 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
     acuerdos = agreements.map { agreement ->
         AcuerdoOrdenTrabajo(
             id = agreement.id,
+            tipoParticipacionId = agreement.participationTypeId,
             tipoParticipacion = agreement.participationType,
             modalidad = agreement.modality,
             porcentajeCliente = agreement.clientPercentage?.contentOrNull,
             porcentajeEmpresa = agreement.companyPercentage?.contentOrNull,
             tarifaServicio = agreement.serviceFee?.contentOrNull,
             moneda = agreement.currency,
+            monedaId = agreement.currencyId,
             observaciones = agreement.observations,
             activo = agreement.active,
         )
@@ -1562,6 +1772,7 @@ internal data class OrdenTrabajoDetalleDto(
     val liquidations: List<LiquidacionOrdenDto> = emptyList(),
     @SerialName("employee_work") val employeeWork: List<TrabajoEmpleadoDto> = emptyList(),
     val equipment: List<EquipoProcesoDto> = emptyList(),
+    @SerialName("liquidation_agreements") val liquidationAgreements: List<LiquidationAgreementDto> = emptyList(),
     @SerialName("weight_unit_id") val weightUnitId: Long? = null,
 )
 
@@ -1598,14 +1809,71 @@ internal data class TrabajoEmpleadoDto(
 @Serializable
 internal data class AcuerdoOrdenDto(
     val id: Long,
+    @SerialName("participation_type_id") val participationTypeId: Long = 0,
     @SerialName("participation_type") val participationType: String? = null,
     val modality: String,
     @SerialName("client_percentage") val clientPercentage: JsonPrimitive? = null,
     @SerialName("company_percentage") val companyPercentage: JsonPrimitive? = null,
     @SerialName("service_fee") val serviceFee: JsonPrimitive? = null,
     val currency: String? = null,
+    @SerialName("currency_id") val currencyId: Long = 0,
     val observations: String? = null,
     val active: Boolean = false,
+)
+
+@Serializable
+internal data class LiquidationAgreementDto(
+    val id: Long,
+    @SerialName("participation_type") val participationType: String? = null,
+    @SerialName("client_percentage") val clientPercentage: JsonPrimitive,
+    @SerialName("company_percentage") val companyPercentage: JsonPrimitive,
+)
+
+private fun LiquidationAgreementDto.toModel() = AcuerdoLiquidacionOpcion(
+    id = id,
+    tipoParticipacion = participationType,
+    porcentajeCliente = clientPercentage.contentOrNull?.toDoubleOrNull() ?: 0.0,
+    porcentajeEmpresa = companyPercentage.contentOrNull?.toDoubleOrNull() ?: 0.0,
+)
+
+@Serializable
+internal data class LiquidationOptionsDataDto(
+    val date: String,
+    val agreements: List<LiquidationAgreementDto> = emptyList(),
+)
+
+@Serializable
+internal data class LiquidationOptionsResponseDto(val data: LiquidationOptionsDataDto)
+
+private fun LiquidationOptionsDataDto.toModel() = OpcionesLiquidacionOrden(date, agreements.map { it.toModel() })
+
+private fun roundFour(value: Double): Double = (value * 10_000.0).roundToInt() / 10_000.0
+
+@Serializable
+internal data class ParticipationTypeDto(val id: Long, val name: String)
+
+@Serializable
+internal data class AgreementCurrencyDto(
+    val id: Long,
+    val code: String,
+    val name: String,
+    @SerialName("is_base_currency") val isBaseCurrency: Boolean = false,
+)
+
+@Serializable
+internal data class AgreementOptionsDataDto(
+    @SerialName("participation_types") val participationTypes: List<ParticipationTypeDto> = emptyList(),
+    val currencies: List<AgreementCurrencyDto> = emptyList(),
+    @SerialName("base_currency_id") val baseCurrencyId: Long? = null,
+)
+
+@Serializable
+internal data class AgreementOptionsResponseDto(val data: AgreementOptionsDataDto)
+
+private fun AgreementOptionsDataDto.toModel() = OpcionesAcuerdoOrden(
+    tipos = participationTypes.map { TipoParticipacionOpcion(it.id, it.name) },
+    monedas = currencies.map { MonedaAcuerdoOpcion(it.id, it.code, it.name, it.isBaseCurrency) },
+    monedaBaseId = baseCurrencyId ?: currencies.firstOrNull(AgreementCurrencyDto::isBaseCurrency)?.id,
 )
 
 @Serializable

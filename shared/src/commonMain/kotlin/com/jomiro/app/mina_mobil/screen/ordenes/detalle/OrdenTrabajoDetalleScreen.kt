@@ -1,4 +1,4 @@
-package com.jomiro.app.mina_mobil.screen.ordenes.listado
+package com.jomiro.app.mina_mobil.screen.ordenes.detalle
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -62,6 +62,8 @@ import com.jomiro.app.mina_mobil.data.ordenes.EquipoOpcionProceso
 import com.jomiro.app.mina_mobil.data.ordenes.FormularioEdicionOrden
 import com.jomiro.app.mina_mobil.data.ordenes.ClienteOpcionOrden
 import com.jomiro.app.mina_mobil.data.ordenes.UnidadPesoOpcion
+import com.jomiro.app.mina_mobil.screen.ordenes.componentes.DateSelectionDialog
+import com.jomiro.app.mina_mobil.screen.ordenes.componentes.toDisplayDate
 import com.composables.ui.components.BottomSheet
 import com.composables.ui.components.BottomSheetDetent
 import com.composables.ui.components.AlertDialog as ComposablesAlertDialog
@@ -72,17 +74,14 @@ import kotlinx.datetime.toLocalDateTime
 import org.koin.compose.viewmodel.koinViewModel
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.acuerdos.AcuerdosOrdenScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.liquidaciones.LiquidacionesOrdenScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.procesos.costos.CostosProcesoScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.procesos.materiales.MaterialesProcesoScreen
 
 private val DetailInk = Color(0xFF172C3D)
 private val DetailTeal = Color(0xFF087E83)
 private val DetailMuted = Color(0xFF71808B)
-
-enum class OrdenDetalleSeccion(val titulo: String, val icono: String) {
-    COSTOS("Costos de la orden", "¤"),
-    INGRESOS("Ingresos de la orden", "↗"),
-    ACUERDOS("Acuerdos de participación", "▤"),
-    LIQUIDACIONES("Liquidaciones de oro", "◈"),
-}
 
 @Composable
 fun OrdenTrabajoDetalleScreen(
@@ -100,6 +99,14 @@ fun OrdenTrabajoDetalleScreen(
     canViewProcessMaterials: Boolean = false,
     canCreateProcessMaterials: Boolean = false,
     canDeleteProcessMaterials: Boolean = false,
+    canViewAgreements: Boolean = false,
+    canCreateAgreements: Boolean = false,
+    canEditAgreements: Boolean = false,
+    canDeleteAgreements: Boolean = false,
+    canViewLiquidations: Boolean = false,
+    canCreateLiquidations: Boolean = false,
+    canEditLiquidations: Boolean = false,
+    canDeleteLiquidations: Boolean = false,
     equipmentProcessId: Long? = null,
     workProcessId: Long? = null,
     costProcessId: Long? = null,
@@ -127,6 +134,14 @@ fun OrdenTrabajoDetalleScreen(
     LaunchedEffect(ordenId) { viewModel.cargar(ordenId) }
     LaunchedEffect(ordenId, editingOrder) {
         if (editingOrder) viewModel.cargarFormularioEdicion(ordenId)
+    }
+    LaunchedEffect(ordenId, seccion) {
+        if (seccion == OrdenDetalleSeccion.ACUERDOS && (canCreateAgreements || canEditAgreements)) {
+            viewModel.cargarOpcionesAcuerdo()
+        }
+        if (seccion == OrdenDetalleSeccion.LIQUIDACIONES && canCreateLiquidations) {
+            viewModel.cargarOpcionesLiquidacion(ordenId)
+        }
     }
     LaunchedEffect(state.procesoAgregado) {
         if (state.procesoAgregado) mostrarFormularioProceso = false
@@ -318,7 +333,10 @@ fun OrdenTrabajoDetalleScreen(
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                            OrdenDetalleSeccion.entries.forEach { item ->
+                            OrdenDetalleSeccion.entries.filterNot {
+                                it == OrdenDetalleSeccion.ACUERDOS && !(canViewAgreements || canCreateAgreements || canEditAgreements || canDeleteAgreements)
+                                    || it == OrdenDetalleSeccion.LIQUIDACIONES && !(canViewLiquidations || canCreateLiquidations || canEditLiquidations || canDeleteLiquidations)
+                            }.forEach { item ->
                                 val count = when (item) {
                                     OrdenDetalleSeccion.COSTOS -> detail.costos.count { it.proceso.isNullOrBlank() }
                                     OrdenDetalleSeccion.INGRESOS -> detail.ingresos.size
@@ -468,6 +486,48 @@ fun OrdenTrabajoDetalleScreen(
                         }
                     }
                 }
+            } else if (seccion == OrdenDetalleSeccion.ACUERDOS) {
+                AcuerdosOrdenScreen(
+                    orderCode = order.codigo,
+                    agreements = detail.acuerdos,
+                    options = state.opcionesAcuerdo,
+                    loadingOptions = state.cargandoOpcionesAcuerdo,
+                    saving = state.guardandoAcuerdo,
+                    deleting = state.eliminandoAcuerdo,
+                    saved = state.acuerdoGuardado,
+                    error = state.errorAcuerdo,
+                    canCreate = canCreateAgreements && order.codigoEstado != 0 && order.codigoEstado != 3,
+                    canEdit = canEditAgreements && order.codigoEstado != 0 && order.codigoEstado != 3,
+                    canDelete = canDeleteAgreements && order.codigoEstado != 0 && order.codigoEstado != 3,
+                    onLoadOptions = viewModel::cargarOpcionesAcuerdo,
+                    onSave = { agreementId, typeId, clientPercent, companyPercent, fee, currencyId, observations, active ->
+                        viewModel.guardarAcuerdo(ordenId, agreementId, typeId, clientPercent, companyPercent, fee, currencyId, observations, active)
+                    },
+                    onDelete = { viewModel.eliminarAcuerdo(ordenId, it) },
+                    onClearMessage = viewModel::limpiarResultadoAcuerdo,
+                    modifier = modifier,
+                )
+            } else if (seccion == OrdenDetalleSeccion.LIQUIDACIONES) {
+                LiquidacionesOrdenScreen(
+                    orderCode = order.codigo,
+                    liquidations = detail.liquidaciones,
+                    options = state.opcionesLiquidacion,
+                    loadingOptions = state.cargandoOpcionesLiquidacion,
+                    saving = state.guardandoLiquidacion,
+                    deleting = state.eliminandoLiquidacion,
+                    saved = state.liquidacionGuardada,
+                    error = state.errorLiquidacion,
+                    canCreate = canCreateLiquidations && order.codigoEstado != 0,
+                    canEdit = canEditLiquidations,
+                    canDelete = canDeleteLiquidations,
+                    onLoadOptions = { viewModel.cargarOpcionesLiquidacion(ordenId) },
+                    onSave = { liquidation, date, grams, agreement, observations ->
+                        viewModel.guardarLiquidacion(ordenId, liquidation, date, grams, agreement, observations)
+                    },
+                    onDelete = { viewModel.eliminarLiquidacion(ordenId, it) },
+                    onClearMessage = viewModel::limpiarResultadoLiquidacion,
+                    modifier = modifier,
+                )
             } else {
                 OrderSectionContent(modifier, detail, seccion)
             }
