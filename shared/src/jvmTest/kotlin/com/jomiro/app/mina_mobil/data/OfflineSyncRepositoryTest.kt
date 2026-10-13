@@ -81,6 +81,24 @@ class OfflineSyncRepositoryTest {
     }
 
     @Test
+    fun migrationFromVersionOneKeepsAnExistingCachedClientTable() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE cached_client (owner_id INTEGER NOT NULL, id INTEGER NOT NULL, name TEXT NOT NULL, phone TEXT, address TEXT, is_active INTEGER NOT NULL, PRIMARY KEY (owner_id, id))",
+            0,
+        )
+        driver.execute(null, "PRAGMA user_version = 1", 0)
+
+        MinaDatabase.Schema.migrate(driver, 1, MinaDatabase.Schema.version)
+
+        val database = MinaDatabase(driver)
+        database.clientCacheQueries.saveCachedClient(11, 3, "Cliente guardado", null, null, 1L)
+        assertEquals("Cliente guardado", database.clientCacheQueries.selectCachedClients(11).executeAsOne().name)
+        driver.close()
+    }
+
+    @Test
     fun queuesOperationsWithTemporaryIdsAndKeepsEntityReferences() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         MinaDatabase.Schema.create(driver)

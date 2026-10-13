@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +22,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -44,6 +49,41 @@ private val months = listOf(
     "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 )
+
+@Composable
+fun DatePickerField(
+    value: String,
+    label: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var showingPicker by remember { mutableStateOf(false) }
+    Box(modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = value.toDisplayDate(),
+            onValueChange = {},
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(label) },
+            readOnly = true,
+            singleLine = true,
+        )
+        Box(
+            Modifier.matchParentSize()
+                .clickable { showingPicker = true }
+                .semantics {
+                    role = Role.Button
+                    contentDescription = "$label: ${value.toDisplayDate()}"
+                },
+        )
+    }
+    if (showingPicker) {
+        DateSelectionDialog(
+            initialDate = value,
+            onSelect = { selected -> onValueChange(selected.toString()); showingPicker = false },
+            onDismiss = { showingPicker = false },
+        )
+    }
+}
 
 @Composable
 fun DateSelectionDialog(initialDate: String?, onSelect: (LocalDate) -> Unit, onDismiss: () -> Unit) {

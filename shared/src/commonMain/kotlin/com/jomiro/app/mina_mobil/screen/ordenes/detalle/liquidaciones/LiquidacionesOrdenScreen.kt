@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +41,7 @@ import androidx.compose.ui.unit.sp
 import com.jomiro.app.mina_mobil.data.ordenes.AcuerdoLiquidacionOpcion
 import com.jomiro.app.mina_mobil.data.ordenes.LiquidacionOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.OpcionesLiquidacionOrden
+import com.jomiro.app.mina_mobil.screen.ordenes.componentes.DatePickerField
 import kotlin.math.roundToInt
 
 private val LiquidationInk = Color(0xFF172C3D)
@@ -78,6 +78,44 @@ fun LiquidacionesOrdenScreen(
         }
     }
 
+    if (showingForm) {
+        when {
+            loadingOptions -> Column(
+                modifier.fillMaxSize().padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(onClick = { showingForm = false; onClearMessage() }) { Text("← Volver") }
+                Text("Cargando acuerdos aplicables…", color = LiquidationMuted)
+            }
+            options != null || editing != null -> LiquidationFormScreen(
+                modifier = modifier,
+                liquidation = editing,
+                options = options ?: OpcionesLiquidacionOrden(editing?.fecha.orEmpty(), emptyList()),
+                saving = saving,
+                error = error,
+                onDismiss = { showingForm = false; onClearMessage() },
+                onSave = onSave,
+            )
+            error != null -> Column(
+                modifier.fillMaxSize().padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                TextButton(onClick = { showingForm = false; onClearMessage() }) { Text("← Volver") }
+                LiquidationMessage(error, isError = true)
+            }
+        }
+        deletingLiquidation?.let { item ->
+            AlertDialog(
+                onDismissRequest = { if (!deleting) deletingLiquidation = null },
+                title = { Text("Eliminar liquidación") },
+                text = { Text("¿Deseas eliminar el lote del ${item.fecha ?: "fecha desconocida"}?") },
+                confirmButton = { TextButton(enabled = !deleting, onClick = { onDelete(item) }) { Text(if (deleting) "Eliminando…" else "Eliminar") } },
+                dismissButton = { TextButton(enabled = !deleting, onClick = { deletingLiquidation = null }) { Text("Cancelar") } },
+            )
+        }
+        return
+    }
+
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(orderCode, color = LiquidationMuted, fontSize = 13.sp)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -104,27 +142,6 @@ fun LiquidacionesOrdenScreen(
         }
     }
 
-    if (showingForm) {
-        if (loadingOptions) AlertDialog(
-            onDismissRequest = { showingForm = false },
-            title = { Text("Liquidación de oro") },
-            text = { Text("Cargando acuerdos aplicables…") },
-            confirmButton = { TextButton(onClick = { showingForm = false }) { Text("Cerrar") } },
-        ) else if (options != null || editing != null) LiquidationFormDialog(
-            liquidation = editing,
-            options = options ?: OpcionesLiquidacionOrden(editing?.fecha.orEmpty(), emptyList()),
-            saving = saving,
-            error = error,
-            onDismiss = { showingForm = false; onClearMessage() },
-            onSave = onSave,
-        ) else if (error != null) AlertDialog(
-            onDismissRequest = { showingForm = false },
-            title = { Text("No se pudieron cargar los acuerdos") },
-            text = { Text(error) },
-            confirmButton = { TextButton(onClick = { showingForm = false; onClearMessage() }) { Text("Cerrar") } },
-        )
-    }
-
     deletingLiquidation?.let { item ->
         AlertDialog(
             onDismissRequest = { if (!deleting) deletingLiquidation = null },
@@ -137,7 +154,8 @@ fun LiquidacionesOrdenScreen(
 }
 
 @Composable
-private fun LiquidationFormDialog(
+private fun LiquidationFormScreen(
+    modifier: Modifier,
     liquidation: LiquidacionOrdenTrabajo?,
     options: OpcionesLiquidacionOrden,
     saving: Boolean,
@@ -159,20 +177,11 @@ private fun LiquidationFormDialog(
         client to (normalized - client).roundFour()
     } else null
 
-    AlertDialog(
-        onDismissRequest = { if (!saving) onDismiss() },
-        title = { Text(if (liquidation == null) "Nueva liquidación" else "Editar liquidación") },
-        text = {
-            Column(Modifier.fillMaxWidth().height(520.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(
-                    value = date,
-                    onValueChange = { date = it.take(10) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Fecha (AAAA-MM-DD)") },
-                    placeholder = { Text("2026-10-12") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-                    singleLine = true,
-                )
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        TextButton(enabled = !saving, onClick = onDismiss, modifier = Modifier.align(Alignment.Start)) { Text("← Volver") }
+        Text(if (liquidation == null) "Nueva liquidación" else "Editar liquidación", color = LiquidationInk, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        Text("Registre el lote de oro y revise el reparto antes de guardar.", color = LiquidationMuted, fontSize = 13.sp)
+                DatePickerField(value = date, label = "Fecha", onValueChange = { date = it })
                 OutlinedTextField(
                     value = grams,
                     onValueChange = { next -> if (next.matches(Regex("^\\d{0,8}(\\.\\d{0,4})?$"))) grams = next },
@@ -223,11 +232,10 @@ private fun LiquidationFormDialog(
                     minLines = 2,
                     maxLines = 4,
                 )
-                (validationError ?: error)?.let { Text(it, color = Color(0xFFB33A3A), style = MaterialTheme.typography.bodySmall) }
-            }
-        },
-        confirmButton = {
-            TextButton(enabled = !saving && (liquidation != null || options.acuerdos.isNotEmpty()), onClick = {
+        (validationError ?: error)?.let { Text(it, color = Color(0xFFB33A3A), style = MaterialTheme.typography.bodySmall) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            TextButton(enabled = !saving, onClick = onDismiss) { Text("Cancelar") }
+            Button(enabled = !saving && (liquidation != null || options.acuerdos.isNotEmpty()), onClick = {
                 val numericGrams = grams.toDoubleOrNull()
                 validationError = when {
                     !date.matches(Regex("^\\d{4}-\\d{2}-\\d{2}$")) -> "Indique una fecha válida."
@@ -238,10 +246,12 @@ private fun LiquidationFormDialog(
                 if (validationError == null && numericGrams != null) {
                     onSave(liquidation, date, numericGrams, if (liquidation == null) agreement else null, observations)
                 }
-            }) { Text(if (saving) "Guardando…" else "Guardar liquidación") }
-        },
-        dismissButton = { TextButton(enabled = !saving, onClick = onDismiss) { Text("Cancelar") } },
-    )
+            }, colors = ButtonDefaults.buttonColors(containerColor = LiquidationTeal), shape = RoundedCornerShape(10.dp)) {
+                Text(if (saving) "Guardando…" else "Guardar liquidación")
+            }
+        }
+    }
+
 }
 
 @Composable

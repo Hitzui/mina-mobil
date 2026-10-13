@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.jomiro.app.mina_mobil.data.ordenes.AcuerdoOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.LiquidacionOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.AcuerdoLiquidacionOpcion
+import com.jomiro.app.mina_mobil.data.ordenes.IngresoOrdenTrabajo
+import com.jomiro.app.mina_mobil.data.ordenes.OpcionesIngresoOrden
 import com.jomiro.app.mina_mobil.data.ordenes.OrdenesRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -489,5 +491,55 @@ class OrdenTrabajoDetalleViewModel(
 
     fun limpiarResultadoLiquidacion() {
         mutableState.update { it.copy(liquidacionGuardada = false, errorLiquidacion = null) }
+    }
+
+    fun cargarOpcionesIngreso(orderId: Long) {
+        if (mutableState.value.cargandoOpcionesIngreso || mutableState.value.opcionesIngreso != null) return
+        mutableState.update { it.copy(cargandoOpcionesIngreso = true, errorIngreso = null) }
+        viewModelScope.launch {
+            runCatching { repository.opcionesIngreso(orderId) }
+                .onSuccess { options -> mutableState.update { it.copy(opcionesIngreso = options, cargandoOpcionesIngreso = false) } }
+                .onFailure { error -> mutableState.update { it.copy(cargandoOpcionesIngreso = false, errorIngreso = error.message ?: "No se pudieron cargar las opciones de ingresos.") } }
+        }
+    }
+
+    fun guardarIngreso(
+        orderId: Long,
+        income: IngresoOrdenTrabajo?,
+        typeId: Long,
+        date: String,
+        description: String,
+        quantity: Double,
+        unitId: Long?,
+        currencyId: Long,
+        unitPrice: Double,
+        observations: String,
+        options: OpcionesIngresoOrden,
+    ) {
+        if (mutableState.value.guardandoIngreso) return
+        mutableState.update { it.copy(guardandoIngreso = true, ingresoGuardado = false, errorIngreso = null) }
+        viewModelScope.launch {
+            runCatching {
+                repository.guardarIngreso(orderId, income, typeId, date, description, quantity, unitId, currencyId, unitPrice, observations, options)
+                repository.detalle(orderId)
+            }.onSuccess { detail -> mutableState.update { it.copy(detalle = detail, guardandoIngreso = false, ingresoGuardado = true) } }
+                .onFailure { error -> mutableState.update { it.copy(guardandoIngreso = false, errorIngreso = error.message ?: "No se pudo guardar el ingreso.") } }
+        }
+    }
+
+    fun eliminarIngreso(orderId: Long, income: IngresoOrdenTrabajo) {
+        if (mutableState.value.eliminandoIngreso) return
+        mutableState.update { it.copy(eliminandoIngreso = true, ingresoGuardado = false, errorIngreso = null) }
+        viewModelScope.launch {
+            runCatching {
+                repository.eliminarIngreso(orderId, income)
+                repository.detalle(orderId)
+            }.onSuccess { detail -> mutableState.update { it.copy(detalle = detail, eliminandoIngreso = false, ingresoGuardado = true) } }
+                .onFailure { error -> mutableState.update { it.copy(eliminandoIngreso = false, errorIngreso = error.message ?: "No se pudo eliminar el ingreso.") } }
+        }
+    }
+
+    fun limpiarResultadoIngreso() {
+        mutableState.update { it.copy(ingresoGuardado = false, errorIngreso = null) }
     }
 }

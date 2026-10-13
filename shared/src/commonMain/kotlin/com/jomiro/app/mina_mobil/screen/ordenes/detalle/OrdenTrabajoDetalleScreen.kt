@@ -76,6 +76,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import com.jomiro.app.mina_mobil.screen.ordenes.detalle.acuerdos.AcuerdosOrdenScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.detalle.liquidaciones.LiquidacionesOrdenScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.ingresos.IngresosOrdenScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.costos.CostosOrdenScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.detalle.procesos.costos.CostosProcesoScreen
 import com.jomiro.app.mina_mobil.screen.ordenes.detalle.procesos.materiales.MaterialesProcesoScreen
 
@@ -107,6 +109,10 @@ fun OrdenTrabajoDetalleScreen(
     canCreateLiquidations: Boolean = false,
     canEditLiquidations: Boolean = false,
     canDeleteLiquidations: Boolean = false,
+    canViewIncomes: Boolean = false,
+    canCreateIncomes: Boolean = false,
+    canEditIncomes: Boolean = false,
+    canDeleteIncomes: Boolean = false,
     equipmentProcessId: Long? = null,
     workProcessId: Long? = null,
     costProcessId: Long? = null,
@@ -124,6 +130,9 @@ fun OrdenTrabajoDetalleScreen(
     onBackFromOrderEdit: () -> Unit = {},
     seccion: OrdenDetalleSeccion? = null,
     onSelectSection: (OrdenDetalleSeccion) -> Unit = {},
+    showingSummary: Boolean = false,
+    onOpenSummary: () -> Unit = {},
+    onCloseSummary: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: OrdenTrabajoDetalleViewModel = koinViewModel(),
 ) {
@@ -136,6 +145,9 @@ fun OrdenTrabajoDetalleScreen(
         if (editingOrder) viewModel.cargarFormularioEdicion(ordenId)
     }
     LaunchedEffect(ordenId, seccion) {
+        if (seccion == OrdenDetalleSeccion.INGRESOS && (canCreateIncomes || canEditIncomes)) {
+            viewModel.cargarOpcionesIngreso(ordenId)
+        }
         if (seccion == OrdenDetalleSeccion.ACUERDOS && (canCreateAgreements || canEditAgreements)) {
             viewModel.cargarOpcionesAcuerdo()
         }
@@ -285,6 +297,14 @@ fun OrdenTrabajoDetalleScreen(
                         modifier = modifier,
                     )
                 }
+            } else if (showingSummary) {
+                ResumenOrdenScreen(
+                    detalle = detail,
+                    puedeVerCostos = canViewProcessCosts || canCreateProcessCosts || canEditProcessCosts || canDeleteProcessCosts,
+                    puedeVerIngresos = canViewIncomes || canCreateIncomes || canEditIncomes || canDeleteIncomes,
+                    onBack = onCloseSummary,
+                    modifier = modifier,
+                )
             } else if (seccion == null) {
                 OrderOverview(
                     modifier = modifier,
@@ -300,6 +320,7 @@ fun OrdenTrabajoDetalleScreen(
                     puedeVerMateriales = canViewProcessMaterials || canCreateProcessMaterials || canDeleteProcessMaterials,
                     puedeAgregarMateriales = canCreateProcessMaterials && order.codigoEstado != 0 && order.codigoEstado != 3,
                     onOpenSections = { costsSheetState.targetDetent = BottomSheetDetent.FullyExpanded },
+                    onOpenSummary = onOpenSummary,
                     onAddProcess = {
                         viewModel.cargarEtapasProceso(ordenId)
                             mostrarFormularioProceso = true
@@ -336,6 +357,8 @@ fun OrdenTrabajoDetalleScreen(
                             OrdenDetalleSeccion.entries.filterNot {
                                 it == OrdenDetalleSeccion.ACUERDOS && !(canViewAgreements || canCreateAgreements || canEditAgreements || canDeleteAgreements)
                                     || it == OrdenDetalleSeccion.LIQUIDACIONES && !(canViewLiquidations || canCreateLiquidations || canEditLiquidations || canDeleteLiquidations)
+                                    || it == OrdenDetalleSeccion.INGRESOS && !(canViewIncomes || canCreateIncomes || canEditIncomes || canDeleteIncomes)
+                                    || it == OrdenDetalleSeccion.COSTOS && !(canViewProcessCosts || canCreateProcessCosts || canEditProcessCosts || canDeleteProcessCosts)
                             }.forEach { item ->
                                 val count = when (item) {
                                     OrdenDetalleSeccion.COSTOS -> detail.costos.count { it.proceso.isNullOrBlank() }
@@ -486,6 +509,37 @@ fun OrdenTrabajoDetalleScreen(
                         }
                     }
                 }
+            } else if (seccion == OrdenDetalleSeccion.COSTOS) {
+                CostosOrdenScreen(
+                    orderId = ordenId,
+                    orderCode = order.codigo,
+                    orderClosed = order.codigoEstado == 0 || order.codigoEstado == 3,
+                    canCreate = canCreateProcessCosts,
+                    canEdit = canEditProcessCosts,
+                    canDelete = canDeleteProcessCosts,
+                    modifier = modifier,
+                )
+            } else if (seccion == OrdenDetalleSeccion.INGRESOS) {
+                IngresosOrdenScreen(
+                    orderCode = order.codigo,
+                    incomes = detail.ingresos,
+                    options = state.opcionesIngreso,
+                    loadingOptions = state.cargandoOpcionesIngreso,
+                    saving = state.guardandoIngreso,
+                    deleting = state.eliminandoIngreso,
+                    saved = state.ingresoGuardado,
+                    error = state.errorIngreso,
+                    canCreate = canCreateIncomes && order.codigoEstado != 0 && order.codigoEstado != 3,
+                    canEdit = canEditIncomes,
+                    canDelete = canDeleteIncomes,
+                    onLoadOptions = { viewModel.cargarOpcionesIngreso(ordenId) },
+                    onSave = { income, typeId, date, description, quantity, unitId, currencyId, unitPrice, observations, options ->
+                        viewModel.guardarIngreso(ordenId, income, typeId, date, description, quantity, unitId, currencyId, unitPrice, observations, options)
+                    },
+                    onDelete = { viewModel.eliminarIngreso(ordenId, it) },
+                    onClearMessage = viewModel::limpiarResultadoIngreso,
+                    modifier = modifier,
+                )
             } else if (seccion == OrdenDetalleSeccion.ACUERDOS) {
                 AcuerdosOrdenScreen(
                     orderCode = order.codigo,
@@ -550,6 +604,7 @@ private fun OrderOverview(
     puedeVerMateriales: Boolean,
     puedeAgregarMateriales: Boolean,
     onOpenSections: () -> Unit,
+    onOpenSummary: () -> Unit,
     onAddProcess: () -> Unit,
     onEditOrder: () -> Unit,
     onAddWork: (ProcesoOrdenTrabajo) -> Unit,
@@ -586,6 +641,12 @@ private fun OrderOverview(
                 DetailField("Fecha", formatDetailDate(order.fecha))
                 DetailField("Peso mineral", order.pesoMineral?.let { "$it ${order.unidadPeso.orEmpty()}".trim() } ?: "Sin registrar")
                 DetailField("Descripción", order.descripcion?.takeIf(String::isNotBlank) ?: "Sin descripción")
+                Button(
+                    onClick = onOpenSummary,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
+                    shape = RoundedCornerShape(12.dp),
+                ) { Text("Ver resumen operativo y financiero") }
                 Button(
                     onClick = onOpenSections,
                     modifier = Modifier.fillMaxWidth(),

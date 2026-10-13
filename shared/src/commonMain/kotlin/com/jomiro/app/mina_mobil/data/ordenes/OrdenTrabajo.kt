@@ -154,6 +154,7 @@ data class CostoProcesoTrabajo(
 data class CategoriaCostoOpcion(val id: Long, val nombre: String)
 data class MonedaCostoOpcion(val id: Long, val codigo: String, val nombre: String, val monedaBase: Boolean)
 data class OpcionesCostoProceso(val categorias: List<CategoriaCostoOpcion>, val monedas: List<MonedaCostoOpcion>, val fecha: String)
+data class OpcionesCostoOrden(val categorias: List<CategoriaCostoOpcion>, val monedas: List<MonedaCostoOpcion>, val fecha: String)
 
 data class EtapaOpcionProceso(val id: Long, val nombre: String, val orden: Int)
 
@@ -167,6 +168,11 @@ data class CostoOrdenTrabajo(
     val moneda: String?,
     val total: String?,
     val totalNio: String?,
+    val categoriaId: Long = 0,
+    val cantidadNumero: Double? = null,
+    val costoUnitario: Double? = null,
+    val monedaId: Long = 0,
+    val observaciones: String? = null,
 )
 
 data class IngresoOrdenTrabajo(
@@ -177,6 +183,21 @@ data class IngresoOrdenTrabajo(
     val moneda: String?,
     val total: String?,
     val totalNio: String?,
+    val cantidad: String? = null,
+    val unidad: String? = null,
+    val precioUnitario: String? = null,
+    val tipoId: Long = 0,
+    val unidadId: Long? = null,
+    val monedaId: Long = 0,
+    val observaciones: String? = null,
+)
+
+data class TipoIngresoOpcion(val id: Long, val nombre: String)
+data class OpcionesIngresoOrden(
+    val fecha: String,
+    val tipos: List<TipoIngresoOpcion>,
+    val unidades: List<UnidadPesoOpcion>,
+    val monedas: List<MonedaCostoOpcion>,
 )
 
 data class AcuerdoOrdenTrabajo(

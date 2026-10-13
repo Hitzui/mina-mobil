@@ -115,6 +115,10 @@ fun App() {
                     canCreateLiquidations = "liquidaciones.create" in session.permissions,
                     canEditLiquidations = "liquidaciones.edit" in session.permissions,
                     canDeleteLiquidations = "liquidaciones.delete" in session.permissions,
+                    canViewIncomes = "ingresos.view" in session.permissions,
+                    canCreateIncomes = "ingresos.create" in session.permissions,
+                    canEditIncomes = "ingresos.edit" in session.permissions,
+                    canDeleteIncomes = "ingresos.delete" in session.permissions,
                     onLogout = viewModel::logout,
                 )
             } else {
@@ -278,6 +282,10 @@ private fun SignedInScreen(
     canCreateLiquidations: Boolean,
     canEditLiquidations: Boolean,
     canDeleteLiquidations: Boolean,
+    canViewIncomes: Boolean,
+    canCreateIncomes: Boolean,
+    canEditIncomes: Boolean,
+    canDeleteIncomes: Boolean,
     onLogout: () -> Unit,
 ) {
     val offlineSyncRepository: OfflineSyncRepository = koinInject()
@@ -291,6 +299,7 @@ private fun SignedInScreen(
     var selectedSection by remember { mutableStateOf(AppSection.HOME) }
     var selectedOrderId by remember { mutableStateOf<Long?>(null) }
     var selectedOrderSection by remember { mutableStateOf<OrdenDetalleSeccion?>(null) }
+    var showingOrderSummary by remember { mutableStateOf(false) }
     var equipmentProcessId by remember { mutableStateOf<Long?>(null) }
     var workProcessId by remember { mutableStateOf<Long?>(null) }
     var costProcessId by remember { mutableStateOf<Long?>(null) }
@@ -331,6 +340,7 @@ private fun SignedInScreen(
                                 selectedSection = section
                                 selectedOrderId = null
                                 selectedOrderSection = null
+                                showingOrderSummary = false
                                 equipmentProcessId = null
                                 workProcessId = null
                                 costProcessId = null
@@ -371,6 +381,7 @@ private fun SignedInScreen(
                                 costProcessId != null -> "Costos del proceso"
                                 editingOrder -> "Editar orden"
                                 equipmentProcessId != null -> "Asignar equipo"
+                                showingOrderSummary -> "Resumen de la orden"
                                 selectedOrderSection != null -> selectedOrderSection!!.titulo
                                 else -> "Detalle de orden"
                             },
@@ -386,6 +397,7 @@ private fun SignedInScreen(
                                 else if (costProcessId != null) costProcessId = null
                                 else if (editingOrder) editingOrder = false
                                 else if (equipmentProcessId != null) equipmentProcessId = null
+                                else if (showingOrderSummary) showingOrderSummary = false
                                 else if (selectedOrderSection != null) selectedOrderSection = null
                                 else selectedOrderId = null
                             }) {
@@ -473,6 +485,7 @@ private fun SignedInScreen(
                             canEdit = canEditOrders,
                             onShowOrder = {
                                 selectedOrderSection = null
+                                showingOrderSummary = false
                                 equipmentProcessId = null
                                 workProcessId = null
                                 costProcessId = null
@@ -482,6 +495,7 @@ private fun SignedInScreen(
                             },
                             onEditOrder = {
                                 selectedOrderSection = null
+                                showingOrderSummary = false
                                 equipmentProcessId = null
                                 workProcessId = null
                                 costProcessId = null
@@ -515,6 +529,10 @@ private fun SignedInScreen(
                             canCreateLiquidations = canCreateLiquidations,
                             canEditLiquidations = canEditLiquidations,
                             canDeleteLiquidations = canDeleteLiquidations,
+                            canViewIncomes = canViewIncomes,
+                            canCreateIncomes = canCreateIncomes,
+                            canEditIncomes = canEditIncomes,
+                            canDeleteIncomes = canDeleteIncomes,
                             equipmentProcessId = equipmentProcessId,
                             workProcessId = workProcessId,
                             costProcessId = costProcessId,
@@ -532,6 +550,9 @@ private fun SignedInScreen(
                             onBackFromOrderEdit = { editingOrder = false },
                             seccion = selectedOrderSection,
                             onSelectSection = { selectedOrderSection = it },
+                            showingSummary = showingOrderSummary,
+                            onOpenSummary = { showingOrderSummary = true },
+                            onCloseSummary = { showingOrderSummary = false },
                             modifier = Modifier.padding(contentPadding),
                         )
                     }

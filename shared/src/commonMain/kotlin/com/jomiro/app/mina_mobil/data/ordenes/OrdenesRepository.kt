@@ -269,6 +269,120 @@ class OrdenesRepository(
         if (response.status.value !in 200..299) throw apiException(response.bodyAsText(), "No se pudo eliminar el costo.")
     }
 
+    suspend fun opcionesCostosOrden(ordenId: Long): OpcionesCostoOrden {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        offlineSync.offlineSnapshot(session.userId)?.let { snapshot ->
+            val catalogs = snapshot["catalogs"]?.jsonObject
+                ?: throw OrdenesException("La descarga local no incluye las opciones de costos.")
+            val categories = ApiJson.instance.decodeFromString<List<CategoriaCostoDto>>(catalogs["cost_categories"]?.toString() ?: "[]")
+                .map { CategoriaCostoOpcion(it.id, it.name) }
+            val currencies = ApiJson.instance.decodeFromString<List<MonedaCostoDto>>(catalogs["currencies"]?.toString() ?: "[]")
+                .map { MonedaCostoOpcion(it.id, it.code, it.name, it.isBaseCurrency) }
+            if (categories.isEmpty() || currencies.isEmpty()) {
+                throw OrdenesException("La descarga local no incluye categorías o monedas para costos. Descargue los datos nuevamente.")
+            }
+            return OpcionesCostoOrden(categories, currencies, kotlin.time.Clock.System.now().toString().take(10))
+        }
+        val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/cost-options") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar las opciones de costos generales.")
+        return runCatching { ApiJson.instance.decodeFromString<OpcionesCostoResponseDto>(body).data.toOrderModel() }
+            .getOrElse { throw OrdenesException("No se pudieron interpretar las opciones de costos generales.") }
+    }
+
+    suspend fun listarCostosOrden(ordenId: Long): List<CostoOrdenTrabajo> {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        if (offlineSync.isOfflineMode(session.userId)) {
+            return detalleLocal(session.userId, ordenId).costos.filter { it.proceso.isNullOrBlank() }
+                .sortedByDescending { it.fecha }
+        }
+        val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/costs") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar los costos generales de la orden.")
+        return runCatching { ApiJson.instance.decodeFromString<CostosOrdenResponseDto>(body).data.costs.map { it.toOrderModel() } }
+            .getOrElse { throw OrdenesException("No se pudieron interpretar los costos generales de la orden.") }
+    }
+
+    suspend fun guardarCostoOrden(
+        ordenId: Long,
+        costo: CostoOrdenTrabajo?,
+        categoriaId: Long,
+        fecha: String,
+        descripcion: String,
+        cantidad: Double,
+        costoUnitario: Double,
+        monedaId: Long,
+        observaciones: String,
+        opciones: OpcionesCostoOrden,
+    ): CostoOrdenTrabajo {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val body = buildJsonObject {
+            put("order_id", ordenId); costo?.let { put("cost_id", it.id) }
+            put("categoria_costo_id", categoriaId); put("fecha", fecha); put("descripcion", descripcion.trim())
+            put("cantidad", cantidad); put("costo_unitario", costoUnitario); put("moneda_id", monedaId)
+            if (observaciones.isNotBlank()) put("observaciones", observaciones.trim())
+        }
+        if (offlineSync.isOfflineMode(session.userId)) {
+            val category = opciones.categorias.firstOrNull { it.id == categoriaId }?.nombre.orEmpty()
+            val currency = opciones.monedas.firstOrNull { it.id == monedaId }
+            val rate = if (currency?.monedaBase == true) 1.0 else offlineExchangeRate(session.userId, monedaId, fecha)
+            if (rate == null) throw OrdenesException("No se descargó el tipo de cambio necesario para la fecha y moneda seleccionadas.")
+            val total = (cantidad * costoUnitario).roundMoney()
+            val result = CostoOrdenTrabajo(
+                id = costo?.id ?: 0,
+                fecha = fecha,
+                proceso = null,
+                categoria = category,
+                descripcion = descripcion,
+                cantidad = cantidad.toString(),
+                moneda = currency?.codigo.orEmpty(),
+                total = total.toString(),
+                totalNio = (total * rate).roundMoney().toString(),
+                categoriaId = categoriaId,
+                cantidadNumero = cantidad,
+                costoUnitario = costoUnitario,
+                monedaId = monedaId,
+                observaciones = observaciones,
+            )
+            val operationType = if (costo == null) "order_cost.create" else "order_cost.update"
+            val localId = offlineSync.enqueueOperation(session.userId, operationType, body, "order_cost") { tempId ->
+                result.copy(id = costo?.id ?: tempId).toOfflineJson(ordenId)
+            }
+            return result.copy(id = costo?.id ?: localId)
+        }
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/costs" + (costo?.let { "/${it.id}" } ?: "")
+        val response = if (costo == null) client.post(endpoint) {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+            contentType(ContentType.Application.Json); setBody(body)
+        } else client.put(endpoint) {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+            contentType(ContentType.Application.Json); setBody(body)
+        }
+        val responseBody = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(responseBody, "No se pudo guardar el costo general.")
+        return runCatching { ApiJson.instance.decodeFromString<OrderCostResponseDto>(responseBody).data.toOrderModel() }
+            .getOrElse { throw OrdenesException("No se pudo interpretar el costo guardado.") }
+    }
+
+    suspend fun eliminarCostoOrden(ordenId: Long, costo: CostoOrdenTrabajo) {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val payload = buildJsonObject { put("order_id", ordenId); put("cost_id", costo.id) }
+        if (offlineSync.isOfflineMode(session.userId)) {
+            offlineSync.enqueueOperation(session.userId, "order_cost.delete", payload, "order_cost_deleted") { localId ->
+                buildJsonObject { put("id", costo.id); put("order_id", ordenId); put("local_id", localId) }
+            }
+            return
+        }
+        val response = client.delete("${baseUrl.trimEnd('/')}/orders/$ordenId/costs/${costo.id}") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        if (response.status.value !in 200..299) throw apiException(response.bodyAsText(), "No se pudo eliminar el costo general.")
+    }
+
     suspend fun opcionesFormulario(): OpcionesFormularioOrden {
         val session = sessions.current()
             ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
@@ -478,6 +592,108 @@ class OrdenesRepository(
             throw OrdenesException(message ?: "No se pudo cargar el detalle de la orden (HTTP ${response.status.value}).")
         }
         return parseOrderDetail(body)
+    }
+
+    suspend fun opcionesIngreso(ordenId: Long): OpcionesIngresoOrden {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val snapshot = offlineSync.offlineSnapshot(session.userId)
+        if (snapshot != null) {
+            val catalogs = snapshot["catalogs"]?.jsonObject ?: throw OrdenesException("La descarga no incluye los catálogos de ingresos.")
+            val incomeTypes = catalogs["income_types"]
+                ?: throw OrdenesException("La descarga Offline no incluye los tipos de ingreso. Conéctate Online y vuelve a descargar los datos.")
+            val types = ApiJson.instance.decodeFromString<List<IncomeTypeDto>>(incomeTypes.toString())
+            val units = ApiJson.instance.decodeFromString<List<CategoriaCostoDto>>(catalogs["units"]?.toString() ?: "[]")
+            val currencies = ApiJson.instance.decodeFromString<List<MonedaCostoDto>>(catalogs["currencies"]?.toString() ?: "[]")
+            return OpcionesIngresoOrden(
+                fecha = kotlin.time.Clock.System.now().toString().take(10),
+                tipos = types.map { TipoIngresoOpcion(it.id, it.name) },
+                unidades = units.map { UnidadPesoOpcion(it.id, it.name) },
+                monedas = currencies.map { MonedaCostoOpcion(it.id, it.code, it.name, it.isBaseCurrency) },
+            )
+        }
+        val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/income-options") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudieron cargar las opciones de ingresos.")
+        return runCatching { ApiJson.instance.decodeFromString<IncomeOptionsResponseDto>(body).data.toModel() }
+            .getOrElse { throw OrdenesException("No se pudieron interpretar las opciones de ingresos.") }
+    }
+
+    suspend fun guardarIngreso(
+        ordenId: Long,
+        ingreso: IngresoOrdenTrabajo?,
+        tipoId: Long,
+        fecha: String,
+        descripcion: String,
+        cantidad: Double,
+        unidadId: Long?,
+        monedaId: Long,
+        precioUnitario: Double,
+        observaciones: String,
+        opciones: OpcionesIngresoOrden,
+    ) {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val payload = buildJsonObject {
+            put("order_id", ordenId)
+            ingreso?.let { put("income_id", it.id) }
+            put("type_id", tipoId); put("date", fecha)
+            if (descripcion.isNotBlank()) put("description", descripcion)
+            put("quantity", cantidad); unidadId?.let { put("unit_id", it) }
+            put("unit_price", precioUnitario); put("currency_id", monedaId)
+            if (observaciones.isNotBlank()) put("observations", observaciones)
+        }
+        if (offlineSync.isOfflineMode(session.userId)) {
+            val catalogs = offlineSync.offlineSnapshot(session.userId)?.get("catalogs")?.jsonObject
+            val rates = runCatching {
+                ApiJson.instance.decodeFromString<List<OfflineExchangeRateDto>>(catalogs?.get("exchange_rates")?.toString() ?: "[]")
+            }.getOrDefault(emptyList())
+            val currency = opciones.monedas.firstOrNull { it.id == monedaId }
+            val exchangeRate = if (currency?.monedaBase == true) 1.0 else rates
+                .filter { it.currencyId == monedaId && it.fecha <= fecha }
+                .maxWithOrNull(compareBy<OfflineExchangeRateDto> { it.fecha }.thenBy { it.id })?.rate
+            val total = (cantidad * precioUnitario).roundMoney()
+            val typeName = opciones.tipos.firstOrNull { it.id == tipoId }?.nombre.orEmpty()
+            val currencyCode = currency?.codigo.orEmpty()
+            val unitName = opciones.unidades.firstOrNull { it.id == unidadId }?.nombre
+            val localType = if (ingreso == null) "income.create" else "income.update"
+            offlineSync.enqueueOperation(session.userId, localType, payload, "income", ingreso?.id) { localId ->
+                buildJsonObject {
+                    put("id", ingreso?.id ?: localId); put("order_id", ordenId)
+                    put("type_id", tipoId); put("type", typeName); put("date", fecha)
+                    put("description", descripcion); put("quantity", cantidad); unidadId?.let { put("unit_id", it) }
+                    put("unit", unitName.orEmpty()); put("unit_price", precioUnitario)
+                    put("currency_id", monedaId); put("currency", currencyCode); put("total", total)
+                    exchangeRate?.let { put("total_nio", (total * it).roundMoney()) }
+                    put("observations", observaciones)
+                }
+            }
+            return
+        }
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/incomes" + (ingreso?.let { "/${it.id}" } ?: "")
+        val response = if (ingreso == null) client.post(endpoint) {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+            contentType(ContentType.Application.Json); setBody(payload)
+        } else client.put(endpoint) {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+            contentType(ContentType.Application.Json); setBody(payload)
+        }
+        if (response.status.value !in 200..299) throw apiException(response.bodyAsText(), "No se pudo guardar el ingreso.")
+    }
+
+    suspend fun eliminarIngreso(ordenId: Long, ingreso: IngresoOrdenTrabajo) {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
+        val payload = buildJsonObject { put("order_id", ordenId); put("income_id", ingreso.id) }
+        if (offlineSync.isOfflineMode(session.userId)) {
+            offlineSync.enqueueOperation(session.userId, "income.delete", payload, "income_deleted", ingreso.id) {
+                buildJsonObject { put("id", ingreso.id); put("order_id", ordenId) }
+            }
+            return
+        }
+        val response = client.delete("${baseUrl.trimEnd('/')}/orders/$ordenId/incomes/${ingreso.id}") {
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}") }
+        }
+        if (response.status.value !in 200..299) throw apiException(response.bodyAsText(), "No se pudo eliminar el ingreso.")
     }
 
     suspend fun opcionesAcuerdo(): OpcionesAcuerdoOrden {
@@ -1072,7 +1288,8 @@ class OrdenesRepository(
     private fun offlineExchangeRate(ownerId: Long, currencyId: Long, date: String): Double? =
         offlineSync.snapshot(ownerId)?.get("catalogs")?.jsonObject?.get("exchange_rates")?.let { raw ->
             runCatching { ApiJson.instance.decodeFromString<List<OfflineExchangeRateDto>>(raw.toString()) }
-                .getOrNull()?.firstOrNull { it.currencyId == currencyId && it.fecha == date }?.rate
+                .getOrNull()?.filter { it.currencyId == currencyId && it.fecha == date }
+                ?.maxByOrNull(OfflineExchangeRateDto::id)?.rate
         }
 
     private fun offlineUnitId(ownerId: Long, id: Long): Long? {
@@ -1149,6 +1366,10 @@ class OrdenesRepository(
             .mapNotNull { runCatching { ApiJson.instance.decodeFromString<EquipoProcesoDto>(it.payload.toString()) }.getOrNull() }
         val localLiquidations = local.filter { it.type == "liquidation" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
             .mapNotNull { runCatching { ApiJson.instance.decodeFromString<LiquidacionOrdenDto>(it.payload.toString()) }.getOrNull() }
+        val localIncomes = local.filter { it.type == "income" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
+            .mapNotNull { runCatching { ApiJson.instance.decodeFromString<IngresoOrdenDto>(it.payload.toString()) }.getOrNull() }
+        val deletedIncomeIds = local.filter { it.type == "income_deleted" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
+            .mapNotNull { it.payload["id"]?.jsonPrimitive?.content?.toLongOrNull() }.toSet()
         val deletedLiquidationIds = local.filter { it.type == "liquidation_deleted" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
             .mapNotNull { it.payload["id"]?.jsonPrimitive?.content?.toLongOrNull() }.toSet()
         val localAgreements = local.filter { it.type == "agreement" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
@@ -1171,6 +1392,13 @@ class OrdenesRepository(
         }
         val deletedMaterialIds = localMaterialRows.filter { it.type == "process_material_deleted" }
             .mapNotNull { it.payload["id"]?.jsonPrimitive?.content?.toLongOrNull() }.toSet()
+        val localOrderCostRows = local.filter { it.type == "order_cost" || it.type == "order_cost_deleted" }
+            .filter { it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
+        val orderCostOverrides = localOrderCostRows.filter { it.type == "order_cost" }.mapNotNull { row ->
+            runCatching { ApiJson.instance.decodeFromString<CostoOrdenDto>(row.payload.toString()) }.getOrNull()
+        }
+        val deletedOrderCostIds = localOrderCostRows.filter { it.type == "order_cost_deleted" }
+            .mapNotNull { it.payload["id"]?.jsonPrimitive?.content?.toLongOrNull() }.toSet()
         val mergedProcesses = (orderDto.processes + localProcesses).distinctBy { it.id }.map { process ->
             process.copy(costs = (process.costs.filterNot { it.id in deletedCostIds || costOverrides.any { cost -> cost.id == it.id } } +
                 costOverrides.filter { it.processId == process.id && it.id !in deletedCostIds }).distinctBy { it.id },
@@ -1179,10 +1407,15 @@ class OrdenesRepository(
         }
         return orderDto.copy(
             processes = mergedProcesses,
+            costs = (orderDto.costs.filterNot { it.process.isNullOrBlank() &&
+                (it.id in deletedOrderCostIds || orderCostOverrides.any { localCost -> localCost.id == it.id }) } +
+                orderCostOverrides.filterNot { it.id in deletedOrderCostIds }).distinctBy { it.id },
             employeeWork = (orderDto.employeeWork + localWorks).distinctBy { it.id },
             equipment = (orderDto.equipment + localEquipment).distinctBy { it.id },
             agreements = (orderDto.agreements.filterNot { it.id in deletedAgreementIds || localAgreements.any { localAgreement -> localAgreement.id == it.id } } +
                 localAgreements.filterNot { it.id in deletedAgreementIds }).distinctBy { it.id },
+            incomes = (orderDto.incomes.filterNot { it.id in deletedIncomeIds || localIncomes.any { localIncome -> localIncome.id == it.id } } +
+                localIncomes.filterNot { it.id in deletedIncomeIds }).distinctBy { it.id },
             liquidations = (orderDto.liquidations.filterNot { it.id in deletedLiquidationIds || localLiquidations.any { localLiquidation -> localLiquidation.id == it.id } } +
                 localLiquidations.filterNot { it.id in deletedLiquidationIds }).distinctBy { it.id },
         ).toModel()
@@ -1223,6 +1456,14 @@ private fun CostoProcesoTrabajo.toOfflineJson(processId: Long): JsonObject = bui
     observaciones?.let { put("observations", it) }
 }
 
+private fun CostoOrdenTrabajo.toOfflineJson(orderId: Long): JsonObject = buildJsonObject {
+    put("id", id); put("order_id", orderId); put("category_id", categoriaId); put("category", categoria.orEmpty())
+    put("date", fecha.orEmpty()); put("description", descripcion.orEmpty())
+    cantidadNumero?.let { put("quantity", it) }; costoUnitario?.let { put("unit_cost", it) }
+    put("total", total?.toDoubleOrNull() ?: 0.0); put("currency_id", monedaId); put("currency", moneda.orEmpty())
+    totalNio?.toDoubleOrNull()?.let { put("total_nio", it) }; observaciones?.let { put("observations", it) }
+}
+
 private fun MaterialProcesoTrabajo.toOfflineJson(processId: Long): JsonObject = buildJsonObject {
     put("id", id); put("process_id", processId); put("product_id", productoId); put("product", producto)
     unidad?.let { put("unit", it) }; put("date", fecha); put("quantity", cantidad)
@@ -1250,6 +1491,7 @@ private data class OfflineEmployeeRateDto(
 
 @Serializable
 private data class OfflineExchangeRateDto(
+    val id: Long = 0,
     @SerialName("moneda_id") val currencyId: Long,
     val fecha: String,
     @SerialName("valor") val rate: Double,
@@ -1267,6 +1509,27 @@ private data class MonedaCostoDto(
 )
 
 @Serializable
+private data class IncomeTypeDto(val id: Long, val name: String)
+
+@Serializable
+private data class IncomeOptionsResponseDto(val data: IncomeOptionsDto)
+
+@Serializable
+private data class IncomeOptionsDto(
+    val date: String,
+    val types: List<IncomeTypeDto> = emptyList(),
+    val units: List<CategoriaCostoDto> = emptyList(),
+    val currencies: List<MonedaCostoDto> = emptyList(),
+)
+
+private fun IncomeOptionsDto.toModel() = OpcionesIngresoOrden(
+    fecha = date,
+    tipos = types.map { TipoIngresoOpcion(it.id, it.name) },
+    unidades = units.map { UnidadPesoOpcion(it.id, it.name) },
+    monedas = currencies.map { MonedaCostoOpcion(it.id, it.code, it.name, it.isBaseCurrency) },
+)
+
+@Serializable
 private data class OpcionesCostoResponseDto(val data: OpcionesCostoDto)
 
 @Serializable
@@ -1280,6 +1543,38 @@ private fun OpcionesCostoDto.toModel() = OpcionesCostoProceso(
     categorias = categories.map { CategoriaCostoOpcion(it.id, it.name) },
     monedas = currencies.map { MonedaCostoOpcion(it.id, it.code, it.name, it.isBaseCurrency) },
     fecha = date,
+)
+
+private fun OpcionesCostoDto.toOrderModel() = OpcionesCostoOrden(
+    categorias = categories.map { CategoriaCostoOpcion(it.id, it.name) },
+    monedas = currencies.map { MonedaCostoOpcion(it.id, it.code, it.name, it.isBaseCurrency) },
+    fecha = date,
+)
+
+@Serializable
+private data class CostosOrdenResponseDto(val data: CostosOrdenDto)
+
+@Serializable
+private data class CostosOrdenDto(val costs: List<CostoOrdenDto> = emptyList())
+
+@Serializable
+private data class OrderCostResponseDto(val data: CostoOrdenDto)
+
+private fun CostoOrdenDto.toOrderModel() = CostoOrdenTrabajo(
+    id = id,
+    fecha = date,
+    proceso = process,
+    categoria = category,
+    descripcion = description,
+    cantidad = quantity?.contentOrNull,
+    moneda = currency,
+    total = total?.contentOrNull,
+    totalNio = totalNio?.contentOrNull,
+    categoriaId = categoryId,
+    cantidadNumero = quantity?.contentOrNull?.toDoubleOrNull(),
+    costoUnitario = unitCost?.contentOrNull?.toDoubleOrNull(),
+    monedaId = currencyId,
+    observaciones = observations,
 )
 
 @Serializable
@@ -1673,6 +1968,11 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
             moneda = cost.currency,
             total = cost.total?.contentOrNull,
             totalNio = cost.totalNio?.contentOrNull,
+            categoriaId = cost.categoryId,
+            cantidadNumero = cost.quantity?.contentOrNull?.toDoubleOrNull(),
+            costoUnitario = cost.unitCost?.contentOrNull?.toDoubleOrNull(),
+            monedaId = cost.currencyId,
+            observaciones = cost.observations,
         )
     },
     ingresos = incomes.map { income ->
@@ -1684,6 +1984,13 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
             moneda = income.currency,
             total = income.total?.contentOrNull,
             totalNio = income.totalNio?.contentOrNull,
+            cantidad = income.quantity?.contentOrNull,
+            unidad = income.unit,
+            precioUnitario = income.unitPrice?.contentOrNull,
+            tipoId = income.typeId,
+            unidadId = income.unitId,
+            monedaId = income.currencyId,
+            observaciones = income.observations,
         )
     },
     acuerdos = agreements.map { agreement ->
@@ -1893,23 +2200,35 @@ internal data class CostoOrdenDto(
     val id: Long,
     val date: String? = null,
     val process: String? = null,
+    @SerialName("category_id") val categoryId: Long = 0,
     val category: String? = null,
     val description: String? = null,
     val quantity: JsonPrimitive? = null,
+    @SerialName("unit_cost") val unitCost: JsonPrimitive? = null,
+    @SerialName("currency_id") val currencyId: Long = 0,
     val currency: String? = null,
     val total: JsonPrimitive? = null,
+    @SerialName("unit_cost_nio") val unitCostNio: JsonPrimitive? = null,
     @SerialName("total_nio") val totalNio: JsonPrimitive? = null,
+    val observations: String? = null,
 )
 
 @Serializable
 internal data class IngresoOrdenDto(
     val id: Long,
     val date: String? = null,
+    @SerialName("type_id") val typeId: Long = 0,
     val type: String? = null,
     val description: String? = null,
+    val quantity: JsonPrimitive? = null,
+    @SerialName("unit_id") val unitId: Long? = null,
+    val unit: String? = null,
+    @SerialName("unit_price") val unitPrice: JsonPrimitive? = null,
+    @SerialName("currency_id") val currencyId: Long = 0,
     val currency: String? = null,
     val total: JsonPrimitive? = null,
     @SerialName("total_nio") val totalNio: JsonPrimitive? = null,
+    val observations: String? = null,
 )
 
 @Serializable

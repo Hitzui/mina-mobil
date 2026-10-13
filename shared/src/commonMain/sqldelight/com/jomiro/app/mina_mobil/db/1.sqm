@@ -1,4 +1,4 @@
-CREATE TABLE cached_client (
+CREATE TABLE IF NOT EXISTS cached_client (
     owner_id INTEGER NOT NULL,
     id INTEGER NOT NULL,
     name TEXT NOT NULL,

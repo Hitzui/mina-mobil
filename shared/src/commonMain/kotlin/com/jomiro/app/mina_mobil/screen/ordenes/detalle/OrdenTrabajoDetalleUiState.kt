@@ -10,6 +10,7 @@ import com.jomiro.app.mina_mobil.data.ordenes.LiquidacionOrdenTrabajo
 import com.jomiro.app.mina_mobil.data.ordenes.OpcionesAcuerdoOrden
 import com.jomiro.app.mina_mobil.data.ordenes.OpcionesEquipoProceso
 import com.jomiro.app.mina_mobil.data.ordenes.OpcionesLiquidacionOrden
+import com.jomiro.app.mina_mobil.data.ordenes.OpcionesIngresoOrden
 import com.jomiro.app.mina_mobil.data.ordenes.OpcionesTrabajoEmpleado
 import com.jomiro.app.mina_mobil.data.ordenes.TarifaTrabajoEmpleado
 
@@ -56,4 +57,10 @@ data class OrdenTrabajoDetalleUiState(
     val liquidacionGuardada: Boolean = false,
     val errorLiquidacion: String? = null,
     val eliminandoLiquidacion: Boolean = false,
+    val opcionesIngreso: OpcionesIngresoOrden? = null,
+    val cargandoOpcionesIngreso: Boolean = false,
+    val guardandoIngreso: Boolean = false,
+    val ingresoGuardado: Boolean = false,
+    val errorIngreso: String? = null,
+    val eliminandoIngreso: Boolean = false,
 )
