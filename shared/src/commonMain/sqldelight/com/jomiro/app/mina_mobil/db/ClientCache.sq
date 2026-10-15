@@ -56,6 +56,9 @@ VALUES (:ownerId, :id, :name, :phone, :address, :isActive);
 getOfflineSnapshot:
 SELECT payload FROM offline_snapshot WHERE owner_id = :ownerId;
 
+getOfflineSnapshotDownloadedAt:
+SELECT downloaded_at FROM offline_snapshot WHERE owner_id = :ownerId;
+
 saveOfflineSnapshot:
 INSERT OR REPLACE INTO offline_snapshot (owner_id, payload, downloaded_at)
 VALUES (:ownerId, :payload, :downloadedAt);

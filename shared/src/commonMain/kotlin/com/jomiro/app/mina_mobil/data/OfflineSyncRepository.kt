@@ -36,6 +36,9 @@ class OfflineSyncRepository(
 ) {
     fun downloaded(ownerId: Long): Boolean = database.clientCacheQueries.getOfflineSnapshot(ownerId).executeAsOneOrNull() != null
 
+    fun snapshotDownloadedAt(ownerId: Long): String? =
+        database.clientCacheQueries.getOfflineSnapshotDownloadedAt(ownerId).executeAsOneOrNull()
+
     fun connectionMode(ownerId: Long): ConnectionMode =
         database.clientCacheQueries.selectConnectionMode(ownerId).executeAsOneOrNull()?.let(ConnectionMode::fromValue)
             ?: if (downloaded(ownerId)) ConnectionMode.OFFLINE else ConnectionMode.ONLINE

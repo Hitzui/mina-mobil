@@ -255,6 +255,7 @@ class OrdenTrabajoDetalleViewModel(
         equipoId: Long?,
         inicio: String,
         fin: String?,
+        horas: Double? = null,
     ) {
         val requestVersion = ++depreciacionEquipoVersion
         if (equipoId == null || inicio.isBlank()) {
@@ -263,7 +264,7 @@ class OrdenTrabajoDetalleViewModel(
         }
         mutableState.update { it.copy(depreciacionEquipo = null, calculandoDepreciacionEquipo = true, errorEquipo = null) }
         viewModelScope.launch {
-            runCatching { repository.depreciacionEquipo(ordenId, procesoId, equipoId, inicio, fin) }
+            runCatching { repository.depreciacionEquipo(ordenId, procesoId, equipoId, inicio, fin, horas) }
                 .onSuccess { estimate ->
                     if (requestVersion == depreciacionEquipoVersion) {
                         mutableState.update { it.copy(depreciacionEquipo = estimate, calculandoDepreciacionEquipo = false) }
@@ -289,11 +290,12 @@ class OrdenTrabajoDetalleViewModel(
         inicio: String,
         fin: String?,
         observaciones: String,
+        horas: Double? = null,
     ) {
         if (mutableState.value.asignandoEquipo) return
         mutableState.update { it.copy(asignandoEquipo = true, errorEquipo = null, equipoAsignado = false) }
         viewModelScope.launch {
-            runCatching { repository.asignarEquipo(ordenId, procesoId, equipoId, inicio, fin, observaciones) }
+            runCatching { repository.asignarEquipo(ordenId, procesoId, equipoId, inicio, fin, observaciones, horas) }
                 .onSuccess {
                     val refreshed = runCatching { repository.detalle(ordenId) }
                     mutableState.update { current ->

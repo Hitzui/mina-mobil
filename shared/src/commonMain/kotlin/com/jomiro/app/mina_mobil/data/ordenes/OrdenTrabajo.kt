@@ -60,6 +60,13 @@ data class EquipoProcesoOrden(
     val depreciacionDiaria: Double,
     val depreciacionTotal: Double,
     val observaciones: String?,
+    val energiaKwh: Double = 0.0,
+    val costoEnergiaNio: Double = 0.0,
+    val costoTotalNio: Double = depreciacionTotal,
+    val metodoCosto: String = "depreciacion",
+    val horasEfectivas: Double? = null,
+    val estadoCosteo: String = "",
+    val costoInsumosNio: Double = 0.0,
 )
 
 data class EquipoOpcionProceso(
@@ -69,6 +76,11 @@ data class EquipoOpcionProceso(
     val valorAdquisicion: Double,
     val valorResidual: Double,
     val vidaUtilMeses: Int,
+    val metodoCosto: String = "depreciacion",
+    val potenciaKw: Double = 0.0,
+    val tarifaEnergiaNioKwh: Double? = null,
+    val depreciacionActiva: Boolean = metodoCosto in setOf("depreciacion", "ambos"),
+    val recursos: List<RecursoEstimadoEquipo> = emptyList(),
 )
 
 data class OpcionesEquipoProceso(val equipos: List<EquipoOpcionProceso>, val inicioPredeterminado: String)
@@ -83,6 +95,13 @@ data class DepreciacionEquipoProceso(
     val depreciacionTotal: Double,
     val disponible: Boolean,
     val solapamiento: String?,
+    val energiaKwh: Double = 0.0,
+    val costoEnergiaNio: Double = 0.0,
+    val costoTotalNio: Double = depreciacionTotal,
+    val metodoCosto: String = "depreciacion",
+    val tarifaConfigurada: Boolean = true,
+    val tarifaEnergiaNioKwh: Double? = null,
+    val costoConInsumosEstimados: Double = costoTotalNio,
 )
 
 data class TrabajoEmpleadoOrden(

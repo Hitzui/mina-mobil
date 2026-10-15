@@ -64,6 +64,7 @@ import com.jomiro.app.mina_mobil.screen.sync.OfflineSyncScreen
 import com.jomiro.app.mina_mobil.data.OfflineSyncRepository
 import com.jomiro.app.mina_mobil.data.ConnectionMode
 import com.jomiro.app.mina_mobil.screen.settings.ConnectionSettingsScreen
+import com.jomiro.app.mina_mobil.screen.home.InicioScreen
 import com.jomiro.app.mina_mobil.screen.clientes.listado.ClientesListadoViewModel
 import com.jomiro.app.mina_mobil.screen.empleados.listado.EmpleadosViewModel
 import com.jomiro.app.mina_mobil.screen.ordenes.listado.OrdenesTrabajoViewModel
@@ -422,10 +423,27 @@ private fun SignedInScreen(
             },
         ) { contentPadding ->
             when (selectedSection) {
-                AppSection.HOME -> HomeContent(
+                AppSection.HOME -> InicioScreen(
+                    userId = userId,
                     name = name,
                     email = email,
                     cashRegister = cashRegister,
+                    connectionMode = connectionMode,
+                    pendingOperations = offlineSyncRepository.pendingCount(userId),
+                    snapshotRevision = offlineSnapshotRevision,
+                    canViewOrders = canViewOrders,
+                    onOpenOrders = { selectedSection = AppSection.WORK_ORDERS },
+                    onShowOrder = { orderId ->
+                        selectedSection = AppSection.WORK_ORDERS
+                        selectedOrderId = orderId
+                        selectedOrderSection = null
+                        showingOrderSummary = true
+                        equipmentProcessId = null
+                        workProcessId = null
+                        costProcessId = null
+                        materialsProcessId = null
+                        editingOrder = false
+                    },
                     modifier = Modifier.padding(contentPadding),
                 )
                 AppSection.CLIENTS -> if (connectionMode == ConnectionMode.ONLINE || hasOfflineSnapshot) ClientesListadoScreen(
@@ -590,25 +608,6 @@ private fun DrawerHeader(name: String, email: String, cashRegister: String) {
         Text(email, color = Muted, fontSize = 12.sp)
         Spacer(Modifier.height(13.dp))
         Text("Caja: $cashRegister", color = Teal, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-    }
-}
-
-@Composable
-private fun HomeContent(name: String, email: String, cashRegister: String, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(22.dp),
-    ) {
-        Text("Hola, $name", color = Ink, fontSize = 25.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(6.dp))
-        Text(email, color = Muted, fontSize = 14.sp)
-        Spacer(Modifier.height(24.dp))
-        Surface(color = Color.White, shape = RoundedCornerShape(18.dp), shadowElevation = 1.dp) {
-            Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                Text("CAJA ASIGNADA", color = Muted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
-                Spacer(Modifier.height(8.dp))
-                Text(cashRegister, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Medium)
-            }
-        }
     }
 }
 

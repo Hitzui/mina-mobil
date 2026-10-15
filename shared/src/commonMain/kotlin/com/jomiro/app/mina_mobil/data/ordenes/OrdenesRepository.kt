@@ -6,6 +6,7 @@ import com.jomiro.app.mina_mobil.data.SessionRepository
 import com.jomiro.app.mina_mobil.network.ApiJson
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
+import io.ktor.client.request.request
 import io.ktor.client.request.headers
 import io.ktor.client.request.post
 import io.ktor.client.request.put
@@ -28,7 +29,10 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import kotlinx.datetime.daysUntil
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
+import kotlinx.datetime.toLocalDateTime
 import kotlin.math.roundToInt
 
 class OrdenesRepository(
@@ -37,6 +41,28 @@ class OrdenesRepository(
     private val sessions: SessionRepository,
     private val offlineSync: OfflineSyncRepository,
 ) {
+    suspend fun usoEquipo(
+        ordenId: Long,
+        procesoId: Long,
+        asignacionId: Long,
+        accion: String = "usage",
+        metodo: io.ktor.http.HttpMethod = io.ktor.http.HttpMethod.Get,
+        datos: JsonObject? = null,
+    ): UsoEquipoDetalle {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró.")
+        if (offlineSync.isOfflineMode(session.userId)) {
+            throw OrdenesException("El saldo y los consumos del equipo requieren modo Online. Sincronice sus asignaciones antes de continuar.")
+        }
+        val response = client.request("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/equipment/$asignacionId/$accion") {
+            method = metodo
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}"); set(HttpHeaders.Accept, "application/json") }
+            if (datos != null) { contentType(ContentType.Application.Json); setBody(datos.toString()) }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudo actualizar el trabajo del equipo.")
+        return ApiJson.instance.decodeFromString<UsoEquipoResponse>(body).data
+    }
+
     suspend fun opcionesMaterialProceso(ordenId: Long, procesoId: Long): OpcionesMaterialProceso {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
         offlineSync.offlineSnapshot(session.userId)?.let { snapshot ->
@@ -1152,31 +1178,49 @@ class OrdenesRepository(
         equipoId: Long,
         fechaInicio: String,
         fechaFin: String?,
+        horasEfectivas: Double? = null,
     ): DepreciacionEquipoProceso {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
         offlineSync.offlineSnapshot(session.userId)?.let { snapshot ->
             val equipment = ApiJson.instance.decodeFromString<List<EquipoOpcionDto>>(
                 snapshot.getValue("catalogs").jsonObject.getValue("equipment").toString(),
             ).firstOrNull { it.id == equipoId } ?: throw OrdenesException("El equipo no está en la descarga local.")
-            val start = kotlinx.datetime.LocalDate.parse(fechaInicio.take(10))
-            val end = kotlinx.datetime.LocalDate.parse((fechaFin ?: fechaInicio).take(10))
-            val days = start.daysUntil(end).coerceAtLeast(0).toDouble()
+            val start = parseEquipoDateTime(fechaInicio)
+            val end = fechaFin?.let(::parseEquipoDateTime)?.toInstant(TimeZone.currentSystemDefault())
+                ?: kotlin.time.Clock.System.now()
+            val assignedHours = ((end.epochSeconds - start.toInstant(TimeZone.currentSystemDefault()).epochSeconds).coerceAtLeast(0)) / 3600.0
+            val hours = horasEfectivas ?: 0.0
+            if (!hours.isFinite() || hours < 0 || hours > assignedHours + 0.0001) {
+                throw OrdenesException("Las horas efectivas deben caber dentro del periodo de asignación.")
+            }
+            val days = hours / 24.0
             val daily = if (equipment.usefulLifeMonths > 0) (((equipment.acquisitionValue - equipment.residualValue).coerceAtLeast(0.0) /
                 (equipment.usefulLifeMonths * 30.0)) * 10_000).roundToInt() / 10_000.0 else 0.0
             val overlap = offlineEquipmentAssignments(session.userId, equipoId).firstOrNull { (priorStart, priorEnd) ->
-                val startDate = fechaInicio.take(10)
-                val endDate = fechaFin?.take(10)
-                (priorEnd == null || startDate <= priorEnd) && (endDate == null || priorStart <= endDate)
+                val startDate = parseEquipoDateTime(fechaInicio).toString()
+                val endDate = fechaFin?.let { parseEquipoDateTime(it).toString() }
+                (priorEnd == null || startDate < priorEnd) && (endDate == null || priorStart < endDate)
             }?.let { "El equipo ya tiene una asignación que se cruza con este periodo." }
-            val remaining = equipment.remainingValue.takeIf { it > 0.0 } ?: (equipment.acquisitionValue - equipment.residualValue).coerceAtLeast(0.0)
+            val remaining = equipment.remainingValue
+            val depreciation = if (equipment.depreciationEnabled) (daily * days).roundMoney().coerceAtMost(remaining.roundMoney()) else 0.0
+            val tariffConfigured = equipment.powerKw <= 0 || equipment.electricityTariffNioKwh != null || horasEfectivas == null
+            val energy = if (equipment.powerKw > 0 && tariffConfigured) {
+                (equipment.powerKw * hours * 10_000).roundToInt() / 10_000.0
+            } else 0.0
+            val energyCost = (energy * (equipment.electricityTariffNioKwh ?: 0.0)).roundMoney()
             return DepreciacionEquipoProceso(equipment.code, equipment.acquisitionValue, equipment.residualValue,
-                equipment.usefulLifeMonths, days, daily, (daily * days).roundMoney().coerceAtMost(remaining.roundMoney()), remaining > 0.0, overlap)
+                equipment.usefulLifeMonths, days, daily, depreciation,
+                true, overlap,
+                energy, energyCost, (depreciation + energyCost).roundMoney(), equipment.costMethod, tariffConfigured,
+                 equipment.electricityTariffNioKwh,
+                 (depreciation + energyCost + equipment.resources.sumOf { it.cantidadPorHora * it.costoUnitarioNio * hours }).roundMoney())
         }
         val response = client.get("${baseUrl.trimEnd('/')}/orders/$ordenId/processes/$procesoId/equipment-depreciation") {
             url {
                 parameters.append("equipo_id", equipoId.toString())
                 parameters.append("fecha_inicio", fechaInicio)
                 fechaFin?.let { parameters.append("fecha_fin", it) }
+                horasEfectivas?.let { parameters.append("horas_efectivas", it.toString()) }
             }
             headers {
                 set(HttpHeaders.Authorization, "Bearer ${session.token}")
@@ -1196,18 +1240,20 @@ class OrdenesRepository(
         fechaInicio: String,
         fechaFin: String?,
         observaciones: String,
+        horasEfectivas: Double? = null,
     ) {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
         if (offlineSync.isOfflineMode(session.userId)) {
             val equipment = opcionesEquipo(ordenId, procesoId).equipos.firstOrNull { it.id == equipoId }
                 ?: throw OrdenesException("El equipo no está en la descarga local.")
-            val estimate = depreciacionEquipo(ordenId, procesoId, equipoId, fechaInicio, fechaFin)
-            if (!estimate.disponible || estimate.solapamiento != null) {
-                throw OrdenesException(estimate.solapamiento ?: "El equipo no tiene valor disponible para depreciar.")
+            val estimate = depreciacionEquipo(ordenId, procesoId, equipoId, fechaInicio, fechaFin, horasEfectivas)
+            if (!estimate.disponible || !estimate.tarifaConfigurada || estimate.solapamiento != null) {
+                throw OrdenesException(estimate.solapamiento ?: "Configure la tarifa de electricidad antes de registrar horas de este equipo.")
             }
             val payload = buildJsonObject {
                 put("order_id", ordenId); put("process_id", procesoId); put("equipo_id", equipoId)
                 put("fecha_inicio", fechaInicio); fechaFin?.let { put("fecha_fin", it) }; put("observaciones", observaciones)
+                horasEfectivas?.let { put("horas_efectivas", it) }
             }
             val processCode = detalleLocal(session.userId, ordenId).procesos.firstOrNull { it.id == procesoId }?.codigo
                 ?: "LOCAL-${-procesoId}"
@@ -1218,6 +1264,12 @@ class OrdenesRepository(
                     put("start_date", fechaInicio); fechaFin?.let { put("end_date", it) }; put("observations", observaciones)
                     put("days", estimate.dias); put("daily_depreciation", estimate.depreciacionDiaria)
                     put("total_depreciation", estimate.depreciacionTotal)
+                    put("energy_kwh", estimate.energiaKwh); put("energy_cost_nio", estimate.costoEnergiaNio)
+                    put("total_cost_nio", estimate.costoTotalNio); put("cost_method", estimate.metodoCosto)
+                    horasEfectivas?.let { put("effective_hours", it) }
+                    put("cost_status", if (horasEfectivas == null) "Pendiente de horas efectivas" else "Provisional hasta sincronizar")
+                    estimate.tarifaEnergiaNioKwh?.let { put("electricity_tariff_nio_kwh", it) }
+                    put("offline_snapshot", true)
                 }
             }
             return
@@ -1233,6 +1285,7 @@ class OrdenesRepository(
                 fechaInicio = fechaInicio,
                 fechaFin = fechaFin,
                 observaciones = observaciones.trim().ifBlank { null },
+                horasEfectivas = horasEfectivas,
             )))
         }
         if (response.status.value !in 200..299) throw apiException(response.bodyAsText(), "No se pudo asignar el equipo al proceso.")
@@ -1307,21 +1360,21 @@ class OrdenesRepository(
                 runCatching { raw.jsonArray }.getOrNull().orEmpty().mapNotNull { entry ->
                     val assignment = entry.jsonObject
                     if (assignment["equipment_id"]?.jsonPrimitive?.content?.toLongOrNull() != equipmentId) null
-                    else assignment["start_date"]?.jsonPrimitive?.content?.take(10)?.let {
-                        it to assignment["end_date"]?.jsonPrimitive?.content?.take(10)
+                    else assignment["start_date"]?.jsonPrimitive?.contentOrNull?.let {
+                        parseEquipoDateTime(it).toString() to assignment["end_date"]?.jsonPrimitive?.contentOrNull?.let { fin -> parseEquipoDateTime(fin).toString() }
                     }
                 }
             }.orEmpty()
         val fromOrderDetails = offlineSync.snapshot(ownerId)?.get("orders")
             ?.let { raw -> runCatching { ApiJson.instance.decodeFromString<List<OrdenTrabajoDetalleDto>>(raw.toString()) }.getOrNull() }
             .orEmpty().flatMap { it.equipment }.filter { it.equipmentId == equipmentId }
-            .mapNotNull { item -> item.startDate?.take(10)?.let { it to item.endDate?.take(10) } }
+            .mapNotNull { item -> item.startDate?.let { parseEquipoDateTime(it).toString() to item.endDate?.let { fin -> parseEquipoDateTime(fin).toString() } } }
         val local = offlineSync.localEntities(ownerId).filter { it.type == "equipment" }
             .mapNotNull { entity ->
                 val payload = entity.payload
                 if (payload["equipment_id"]?.jsonPrimitive?.content?.toLongOrNull() != equipmentId) null
-                else payload["start_date"]?.jsonPrimitive?.content?.take(10)?.let {
-                    it to payload["end_date"]?.jsonPrimitive?.content?.take(10)
+                else payload["start_date"]?.jsonPrimitive?.contentOrNull?.let {
+                    parseEquipoDateTime(it).toString() to payload["end_date"]?.jsonPrimitive?.contentOrNull?.let { fin -> parseEquipoDateTime(fin).toString() }
                 }
             }
         return fromCatalog + fromOrderDetails + local
@@ -1474,6 +1527,12 @@ private fun MaterialProcesoTrabajo.toOfflineJson(processId: Long): JsonObject = 
 private fun Double.displayMaterial(): String = ((this * 1000).toLong() / 1000.0).toString()
 
 private fun Double.roundMoney(): Double = (this * 100).roundToInt() / 100.0
+
+private fun parseEquipoDateTime(value: String): LocalDateTime = runCatching {
+    kotlin.time.Instant.parse(value).toLocalDateTime(TimeZone.currentSystemDefault())
+}.getOrElse {
+    LocalDateTime.parse(if (value.length == 10) "${value}T00:00" else value.replace(' ', 'T'))
+}
 
 @Serializable
 private data class OfflineEmployeeRateDto(
@@ -1856,11 +1915,19 @@ private data class EquipoOpcionDto(
     @SerialName("residual_value") val residualValue: Double,
     @SerialName("useful_life_months") val usefulLifeMonths: Int,
     @SerialName("remaining_value") val remainingValue: Double = 0.0,
+    @SerialName("cost_method") val costMethod: String = "depreciacion",
+    @SerialName("power_kw") val powerKw: Double = 0.0,
+    @SerialName("electricity_tariff_nio_kwh") val electricityTariffNioKwh: Double? = null,
+    @SerialName("depreciation_enabled") val depreciationEnabled: Boolean = costMethod in setOf("depreciacion", "ambos"),
+    val resources: List<RecursoEstimadoEquipo> = emptyList(),
 )
 
 private fun OpcionesEquipoDto.toModel() = OpcionesEquipoProceso(
     equipos = equipment.map {
-        EquipoOpcionProceso(it.id, it.code, it.name, it.acquisitionValue, it.residualValue, it.usefulLifeMonths)
+        EquipoOpcionProceso(
+            it.id, it.code, it.name, it.acquisitionValue, it.residualValue, it.usefulLifeMonths,
+            it.costMethod, it.powerKw, it.electricityTariffNioKwh, it.depreciationEnabled, it.resources,
+        )
     },
     inicioPredeterminado = defaultStart,
 )
@@ -1879,11 +1946,19 @@ private data class DepreciacionEquipoDto(
     @SerialName("total_depreciation") val totalDepreciation: Double,
     @SerialName("available_value") val availableValue: Boolean,
     val overlap: String? = null,
+    @SerialName("energy_kwh") val energyKwh: Double = 0.0,
+    @SerialName("energy_cost_nio") val energyCostNio: Double = 0.0,
+    @SerialName("total_cost_nio") val totalCostNio: Double = totalDepreciation,
+    @SerialName("cost_method") val costMethod: String = "depreciacion",
+    @SerialName("tariff_configured") val tariffConfigured: Boolean = true,
+    @SerialName("electricity_tariff_nio_kwh") val electricityTariffNioKwh: Double? = null,
+    @SerialName("estimated_cost_nio") val estimatedCostNio: Double = totalCostNio,
 )
 
 private fun DepreciacionEquipoDto.toModel() = DepreciacionEquipoProceso(
     code, acquisitionValue, residualValue, usefulLifeMonths, days,
     dailyDepreciation, totalDepreciation, availableValue, overlap,
+    energyKwh, energyCostNio, totalCostNio, costMethod, tariffConfigured, electricityTariffNioKwh, estimatedCostNio,
 )
 
 @Serializable
@@ -1892,6 +1967,7 @@ private data class AsignarEquipoRequestDto(
     @SerialName("fecha_inicio") val fechaInicio: String,
     @SerialName("fecha_fin") val fechaFin: String?,
     @SerialName("observaciones") val observaciones: String?,
+    @SerialName("horas_efectivas") val horasEfectivas: Double? = null,
 )
 
 class OrdenesException(message: String) : Exception(message)
@@ -2048,6 +2124,13 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
             depreciacionDiaria = assignment.dailyDepreciation,
             depreciacionTotal = assignment.totalDepreciation,
             observaciones = assignment.observations,
+            energiaKwh = assignment.energyKwh,
+            costoEnergiaNio = assignment.energyCostNio,
+            costoTotalNio = assignment.totalCostNio,
+            metodoCosto = assignment.costMethod,
+            horasEfectivas = assignment.effectiveHours,
+            estadoCosteo = assignment.costStatus,
+            costoInsumosNio = assignment.suppliesCostNio,
         )
     },
 )
@@ -2095,6 +2178,13 @@ internal data class EquipoProcesoDto(
     val days: Double = 0.0,
     @SerialName("daily_depreciation") val dailyDepreciation: Double = 0.0,
     @SerialName("total_depreciation") val totalDepreciation: Double = 0.0,
+    @SerialName("effective_hours") val effectiveHours: Double? = null,
+    @SerialName("cost_status") val costStatus: String = "",
+    @SerialName("supplies_cost_nio") val suppliesCostNio: Double = 0.0,
+    @SerialName("energy_kwh") val energyKwh: Double = 0.0,
+    @SerialName("energy_cost_nio") val energyCostNio: Double = 0.0,
+    @SerialName("total_cost_nio") val totalCostNio: Double = totalDepreciation,
+    @SerialName("cost_method") val costMethod: String = "depreciacion",
     val observations: String? = null,
 )
 

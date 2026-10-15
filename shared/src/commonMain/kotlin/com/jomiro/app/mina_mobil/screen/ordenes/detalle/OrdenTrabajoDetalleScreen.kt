@@ -139,6 +139,7 @@ fun OrdenTrabajoDetalleScreen(
     val costsSheetState = rememberBottomSheetState()
     var mostrarConfirmacionFinalizar by remember(ordenId) { mutableStateOf(false) }
     var mostrarFormularioProceso by remember(ordenId) { mutableStateOf(false) }
+    var usoEquipoSeleccionado by remember(ordenId) { mutableStateOf<Pair<Long, Long>?>(null) }
     LaunchedEffect(ordenId) { viewModel.cargar(ordenId) }
     LaunchedEffect(ordenId, editingOrder) {
         if (editingOrder) viewModel.cargarFormularioEdicion(ordenId)
@@ -177,7 +178,13 @@ fun OrdenTrabajoDetalleScreen(
         state.detalle != null -> {
             val detail = state.detalle!!
             val order = detail.orden
-            if (editingOrder) {
+            if (usoEquipoSeleccionado != null) {
+                val (processId, assignmentId) = usoEquipoSeleccionado!!
+                UsoEquipoScreen(ordenId, processId, assignmentId, onBack = {
+                    usoEquipoSeleccionado = null
+                    viewModel.cargar(ordenId, reintentar = true)
+                })
+            } else if (editingOrder) {
                 EditarOrdenScreen(
                     form = state.formularioEdicion?.takeIf { it.orden.id == ordenId },
                     loading = state.cargandoFormularioEdicion,
@@ -283,11 +290,11 @@ fun OrdenTrabajoDetalleScreen(
                         error = state.errorEquipo,
                         existingEquipment = detail.equipos.filter { it.codigoProceso == process.codigo },
                         onLoadOptions = { viewModel.cargarOpcionesEquipo(ordenId, process.id) },
-                        onEstimate = { equipmentId, start, end ->
-                            viewModel.consultarDepreciacionEquipo(ordenId, process.id, equipmentId, start, end)
+                        onEstimate = { equipmentId, start, end, hours ->
+                            viewModel.consultarDepreciacionEquipo(ordenId, process.id, equipmentId, start, end, hours)
                         },
-                        onAssign = { equipmentId, start, end, observations ->
-                            viewModel.asignarEquipo(ordenId, process.id, equipmentId, start, end, observations)
+                        onAssign = { equipmentId, start, end, observations, hours ->
+                            viewModel.asignarEquipo(ordenId, process.id, equipmentId, start, end, observations, hours)
                         },
                         onBack = {
                             viewModel.limpiarMensajeEquipo()
@@ -336,6 +343,7 @@ fun OrdenTrabajoDetalleScreen(
                     },
                     onManageCosts = { process -> onManageProcessCosts(process.id) },
                     onManageMaterials = { process -> onManageProcessMaterials(process.id) },
+                    onEquipmentUsage = { processId, assignmentId -> usoEquipoSeleccionado = processId to assignmentId },
                 )
                 ComposablesTheme {
                     BottomSheet(
@@ -609,6 +617,7 @@ private fun OrderOverview(
     onAddEquipment: (ProcesoOrdenTrabajo) -> Unit,
     onManageCosts: (ProcesoOrdenTrabajo) -> Unit,
     onManageMaterials: (ProcesoOrdenTrabajo) -> Unit,
+    onEquipmentUsage: (Long, Long) -> Unit,
 ) {
     val order = detalle.orden
     Column(
@@ -689,6 +698,7 @@ private fun OrderOverview(
                             mostrarEquipos = puedeVerEquipos,
                             puedeAgregarEquipo = puedeAgregarEquipos && openProcess,
                             onAddEquipment = { onAddEquipment(process) },
+                            onEquipmentUsage = { assignmentId -> onEquipmentUsage(process.id, assignmentId) },
                             puedeVerCostos = puedeVerCostos,
                             puedeAgregarCostos = puedeAgregarCostos && openProcess,
                             onManageCosts = { onManageCosts(process) },
@@ -1219,6 +1229,7 @@ private fun ProcessCard(
     mostrarEquipos: Boolean,
     puedeAgregarEquipo: Boolean,
     onAddEquipment: () -> Unit,
+    onEquipmentUsage: (Long) -> Unit,
     puedeVerCostos: Boolean,
     puedeAgregarCostos: Boolean,
     onManageCosts: () -> Unit,
@@ -1299,12 +1310,14 @@ private fun ProcessCard(
                             fontSize = 11.sp,
                         )
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("${assignment.dias.displayDecimal()} días · ${assignment.depreciacionDiaria.displayDecimal()}/día", color = DetailMuted, fontSize = 11.sp)
-                            Text("Deprec. ${assignment.depreciacionTotal.displayDecimal()}", color = DetailTeal, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Text(assignment.horasEfectivas?.let { "${it.displayDecimal()} horas efectivas" } ?: "Horas pendientes / histórico", color = DetailMuted, fontSize = 11.sp)
+                            Text("Costo ${assignment.costoTotalNio.displayDecimal()} NIO", color = DetailTeal, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         }
                         assignment.observaciones?.takeIf(String::isNotBlank)?.let {
                             Text(it, color = DetailMuted, fontSize = 11.sp)
                         }
+                        Text(assignment.estadoCosteo, color = DetailMuted, fontSize = 11.sp)
+                        TextButton(onClick = { onEquipmentUsage(assignment.id) }) { Text("Trabajo efectivo y consumos") }
                     }
                 }
             }
@@ -1652,8 +1665,8 @@ private fun AsignarEquipoScreen(
     error: String?,
     existingEquipment: List<EquipoProcesoOrden>,
     onLoadOptions: () -> Unit,
-    onEstimate: (Long?, String, String?) -> Unit,
-    onAssign: (Long, String, String?, String) -> Unit,
+    onEstimate: (Long?, String, String?, Double?) -> Unit,
+    onAssign: (Long, String, String?, String, Double?) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1665,6 +1678,7 @@ private fun AsignarEquipoScreen(
     var endTime by remember(process.id) { mutableStateOf(startTime) }
     var sigueAsignado by remember(process.id) { mutableStateOf(true) }
     var observations by remember(process.id) { mutableStateOf("") }
+    var effectiveHours by remember(process.id) { mutableStateOf("") }
     var selectorAbierto by remember { mutableStateOf(false) }
     var calendarioAbierto by remember { mutableStateOf<String?>(null) }
     var relojAbierto by remember { mutableStateOf<String?>(null) }
@@ -1683,8 +1697,8 @@ private fun AsignarEquipoScreen(
 
     val start = "${startDate}T$startTime"
     val end = if (sigueAsignado) null else "${endDate}T$endTime"
-    LaunchedEffect(equipmentId, start, end) {
-        onEstimate(equipmentId, start, end)
+    LaunchedEffect(equipmentId, start, end, effectiveHours) {
+        onEstimate(equipmentId, start, end, effectiveHours.replace(',', '.').toDoubleOrNull())
     }
 
     val selectedEquipment = options?.equipos?.firstOrNull { it.id == equipmentId }
@@ -1693,8 +1707,9 @@ private fun AsignarEquipoScreen(
         endDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) &&
             endTime.matches(Regex("\\d{2}:\\d{2}")) && end.orEmpty() > start
         )
-    val canSave = selectedEquipment != null && startValid && endValid && estimate != null &&
-        estimate.solapamiento == null && estimate.disponible && !loadingOptions && !estimating && !saving && !assigned
+    val hoursValid = effectiveHours.isBlank() || (effectiveHours.replace(',', '.').toDoubleOrNull()?.let { it >= 0 && it.isFinite() } == true)
+    val canSave = selectedEquipment != null && startValid && endValid && hoursValid && estimate != null &&
+        estimate.solapamiento == null && estimate.disponible && estimate.tarifaConfigurada && !loadingOptions && !estimating && !saving && !assigned
 
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
@@ -1761,23 +1776,42 @@ private fun AsignarEquipoScreen(
             }
         }
 
-        Text("Depreciación estimada", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 18.dp, bottom = 7.dp))
+        OutlinedTextField(
+            value = effectiveHours,
+            onValueChange = { effectiveHours = it },
+            label = { Text("Horas efectivas de trabajo") },
+            supportingText = { Text("Total trabajado. En blanco queda pendiente; no se cobra el tiempo asignado.") },
+            singleLine = true,
+            isError = !hoursValid,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+        )
+        Text("Costo estimado del equipo", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 18.dp, bottom = 7.dp))
         Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(13.dp), color = Color.White, shadowElevation = 1.dp) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 when {
                     loadingOptions || estimating -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.height(18.dp), color = DetailTeal, strokeWidth = 2.dp)
-                        Text("  Calculando días y depreciación…", color = DetailMuted, fontSize = 12.sp)
+                        Text("  Calculando duración y costos…", color = DetailMuted, fontSize = 12.sp)
                     }
                     estimate != null -> {
-                        EquipmentInfoRow("Días de uso", "${estimate.dias.displayDecimal()} días")
-                        EquipmentInfoRow("Depreciación por día", estimate.depreciacionDiaria.displayDecimal())
-                        EquipmentInfoRow("Depreciación del periodo", estimate.depreciacionTotal.displayDecimal(), emphasized = true)
+                        EquipmentInfoRow("Horas efectivas", effectiveHours.ifBlank { "Pendientes" })
+                        EquipmentInfoRow("Depreciación por hora", (estimate.depreciacionDiaria / 24).displayDecimal())
+                        EquipmentInfoRow("Depreciación por trabajo", estimate.depreciacionTotal.displayDecimal(), emphasized = true)
+                        EquipmentInfoRow("Energía estimada", "${estimate.energiaKwh.displayDecimal()} kWh")
+                        EquipmentInfoRow("Costo eléctrico", "NIO ${estimate.costoEnergiaNio.displayDecimal()}")
+                        EquipmentInfoRow("Costo por horas", "NIO ${estimate.costoTotalNio.displayDecimal()}", emphasized = true)
+                        selectedEquipment?.recursos?.forEach { recurso ->
+                            val horas = effectiveHours.replace(',', '.').toDoubleOrNull() ?: 0.0
+                            EquipmentInfoRow(recurso.nombre, "${(recurso.cantidadPorHora * horas).displayDecimal()} ${recurso.unidad} estimados")
+                        }
+                        EquipmentInfoRow("Referencia con insumos", "NIO ${estimate.costoConInsumosEstimados.displayDecimal()}")
+                        Text("El consumo estimado se sustituye por el registrado en Trabajo efectivo y consumos. En Offline, los costos son provisionales hasta sincronizar.", color = DetailMuted, fontSize = 11.sp)
+                        if (!estimate.tarifaConfigurada) Text("Configure la tarifa general por kWh desde la web antes de asignar este equipo.", color = Color(0xFFB33A3A), fontSize = 12.sp)
                         if (!estimate.disponible) Text("El equipo ya alcanzó su valor residual y no tiene valor por depreciar.", color = Color(0xFFB33A3A), fontSize = 12.sp)
                         estimate.solapamiento?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 12.sp) }
                     }
                     options?.equipos?.isEmpty() == true -> Text("No hay equipos activos disponibles.", color = DetailMuted, fontSize = 13.sp)
-                    else -> Text("Seleccione un equipo para calcular la depreciación.", color = DetailMuted, fontSize = 13.sp)
+                    else -> Text("Seleccione un equipo para calcular su costo.", color = DetailMuted, fontSize = 13.sp)
                 }
             }
         }
@@ -1803,7 +1837,7 @@ private fun AsignarEquipoScreen(
         Row(Modifier.fillMaxWidth().padding(top = 17.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TextButton(onClick = onBack, enabled = !saving, modifier = Modifier.weight(1f)) { Text("Volver al proceso", color = DetailMuted) }
             Button(
-                onClick = { equipmentId?.let { onAssign(it, start, end, observations) } },
+                onClick = { equipmentId?.let { onAssign(it, start, end, observations, effectiveHours.replace(',', '.').toDoubleOrNull()) } },
                 enabled = canSave,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),

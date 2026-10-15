@@ -10,8 +10,37 @@ import io.ktor.client.engine.cio.CIO
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.assertNull
 
 class OrdenesOfflineRepositoryTest {
+    @Test
+    fun equipmentUsesEffectiveHoursAndKeepsFuelEstimateOutOfRecordedCosts() = kotlinx.coroutines.runBlocking {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        MinaDatabase.Schema.create(driver)
+        val database = MinaDatabase(driver)
+        val sessions = SessionRepository(database)
+        sessions.save(UserSession("offline-token", null, 42, "Usuario", "offline@test.local", emptyList(), emptyList(), 1, "Caja"))
+        database.clientCacheQueries.saveOfflineSnapshot(42, """{"data":{"clients":[],"employees":[],"orders":[],"catalogs":{"equipment":[{"id":9,"code":"EQ-9","name":"Planta","acquisition_value":36000,"residual_value":0,"useful_life_months":1,"remaining_value":36000,"depreciation_enabled":true,"cost_method":"depreciacion","power_kw":0,"resources":[{"producto_id":8,"nombre":"Diésel","unidad":"litros","cantidad_por_hora":2,"costo_unitario_nio":45}]}],"equipment_assignments":[{"equipment_id":9,"start_date":"2026-10-01T07:00","end_date":"2026-10-01T09:00"}]}}}""", "2026-10-01T00:00:00Z")
+        val client = HttpClient(CIO)
+        try {
+            val sync = OfflineSyncRepository(client, "http://localhost/api/v1", sessions, database)
+            val repository = OrdenesRepository(client, "http://localhost/api/v1", sessions, sync)
+            val pending = repository.depreciacionEquipo(1, 1, 9, "2026-10-01T09:00", "2026-10-01T17:00")
+            assertEquals(0.0, pending.costoTotalNio)
+            val estimate = repository.depreciacionEquipo(1, 1, 9, "2026-10-01T09:00", "2026-10-01T17:00", 5.0)
+            assertEquals(250.0, estimate.costoTotalNio)
+            assertEquals(700.0, estimate.costoConInsumosEstimados)
+            assertNull(estimate.solapamiento) // Dos usos contiguos el mismo día son válidos.
+            val overlap = repository.depreciacionEquipo(1, 1, 9, "2026-10-01T08:59", "2026-10-01T17:00", 5.0)
+            assertTrue(overlap.solapamiento != null)
+            val excessive = runCatching { repository.depreciacionEquipo(1, 1, 9, "2026-10-01T09:00", "2026-10-01T17:00", 9.0) }
+            assertTrue(excessive.exceptionOrNull() is OrdenesException)
+        } finally {
+            client.close()
+            driver.close()
+        }
+    }
+
     @Test
     fun createsOrderAndProcessLocallyAndKeepsTheirTemporaryRelationship() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)

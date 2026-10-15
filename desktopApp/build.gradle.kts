@@ -17,6 +17,9 @@ dependencies {
     implementation(libs.sqldelight.sqlite.driver)
 
     implementation(libs.compose.uiToolingPreview)
+
+    testImplementation(libs.kotlin.testJunit)
+    testImplementation(libs.junit)
 }
 
 compose.desktop {
