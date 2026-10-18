@@ -1,85 +1,40 @@
 package com.jomiro.app.mina_mobil.screen.ordenes.detalle
 
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.TimePicker
-import androidx.compose.material3.rememberTimePickerState
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.jomiro.app.mina_mobil.data.ordenes.AcuerdoOrdenTrabajo
-import com.jomiro.app.mina_mobil.data.ordenes.CostoOrdenTrabajo
-import com.jomiro.app.mina_mobil.data.ordenes.DetalleOrdenTrabajo
-import com.jomiro.app.mina_mobil.data.ordenes.EtapaOpcionProceso
-import com.jomiro.app.mina_mobil.data.ordenes.IngresoOrdenTrabajo
-import com.jomiro.app.mina_mobil.data.ordenes.LiquidacionOrdenTrabajo
-import com.jomiro.app.mina_mobil.data.ordenes.OrdenTrabajo
-import com.jomiro.app.mina_mobil.data.ordenes.ProcesoOrdenTrabajo
-import com.jomiro.app.mina_mobil.data.ordenes.TrabajoEmpleadoOrden
-import com.jomiro.app.mina_mobil.data.ordenes.OpcionTrabajoEmpleado
-import com.jomiro.app.mina_mobil.data.ordenes.OpcionUnidadTrabajo
-import com.jomiro.app.mina_mobil.data.ordenes.TarifaTrabajoEmpleado
-import com.jomiro.app.mina_mobil.data.ordenes.EquipoProcesoOrden
-import com.jomiro.app.mina_mobil.data.ordenes.OpcionesEquipoProceso
-import com.jomiro.app.mina_mobil.data.ordenes.DepreciacionEquipoProceso
-import com.jomiro.app.mina_mobil.data.ordenes.EquipoOpcionProceso
-import com.jomiro.app.mina_mobil.data.ordenes.FormularioEdicionOrden
-import com.jomiro.app.mina_mobil.data.ordenes.ClienteOpcionOrden
-import com.jomiro.app.mina_mobil.data.ordenes.UnidadPesoOpcion
-import com.jomiro.app.mina_mobil.screen.ordenes.componentes.DateSelectionDialog
-import com.jomiro.app.mina_mobil.screen.ordenes.componentes.toDisplayDate
 import com.composables.ui.components.BottomSheet
 import com.composables.ui.components.BottomSheetDetent
-import com.composables.ui.components.AlertDialog as ComposablesAlertDialog
 import com.composables.ui.components.rememberBottomSheetState
 import com.composables.ui.theme.ComposablesTheme
+import com.jomiro.app.mina_mobil.data.ordenes.*
+import com.jomiro.app.mina_mobil.screen.ordenes.componentes.DateSelectionDialog
+import com.jomiro.app.mina_mobil.screen.ordenes.componentes.toDisplayDate
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.acuerdos.AcuerdosOrdenScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.costos.CostosOrdenScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.ingresos.IngresosOrdenScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.liquidaciones.LiquidacionesOrdenScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.procesos.costos.CostosProcesoScreen
+import com.jomiro.app.mina_mobil.screen.ordenes.detalle.procesos.materiales.MaterialesProcesoScreen
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.koin.compose.viewmodel.koinViewModel
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.input.KeyboardType
-import com.jomiro.app.mina_mobil.screen.ordenes.detalle.acuerdos.AcuerdosOrdenScreen
-import com.jomiro.app.mina_mobil.screen.ordenes.detalle.liquidaciones.LiquidacionesOrdenScreen
-import com.jomiro.app.mina_mobil.screen.ordenes.detalle.ingresos.IngresosOrdenScreen
-import com.jomiro.app.mina_mobil.screen.ordenes.detalle.costos.CostosOrdenScreen
-import com.jomiro.app.mina_mobil.screen.ordenes.detalle.procesos.costos.CostosProcesoScreen
-import com.jomiro.app.mina_mobil.screen.ordenes.detalle.procesos.materiales.MaterialesProcesoScreen
+import com.composables.ui.components.AlertDialog as ComposablesAlertDialog
 
 private val DetailInk = Color(0xFF172C3D)
 private val DetailTeal = Color(0xFF087E83)
@@ -131,15 +86,43 @@ fun OrdenTrabajoDetalleScreen(
     seccion: OrdenDetalleSeccion? = null,
     onSelectSection: (OrdenDetalleSeccion) -> Unit = {},
     showingSummary: Boolean = false,
+    showingLama: Boolean = false,
+    showingCobros: Boolean = false,
+    onOpenCobros: () -> Unit = {},
+    onBackFromCobros: () -> Unit = {},
+    onOpenCobroIncomes: () -> Unit = {},
+    onOpenCobroUpload: () -> Unit = {},
+    onOpenLama: () -> Unit = {},
+    onBackFromLama: () -> Unit = {},
+    onOpenLamaOrder: (Long) -> Unit = {},
+    onOpenLamaAgreement: () -> Unit = {},
+    onOpenTreatmentProcesses: () -> Unit = {},
     onOpenSummary: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: OrdenTrabajoDetalleViewModel = koinViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
+    if (showingCobros) {
+        CobrosOrdenScreen(ordenId, onBack = { viewModel.cargar(ordenId, reintentar = true); onBackFromCobros() },
+            onOpenIncomes = onOpenCobroIncomes, onOpenUpload = onOpenCobroUpload, modifier = modifier)
+        return
+    }
+    if (showingLama) {
+        LamaScreen(
+            ordenId = ordenId,
+            modifier = modifier,
+            onBack = { viewModel.cargar(ordenId, reintentar = true); onBackFromLama() },
+            onOpenOrder = onOpenLamaOrder,
+            onOpenAgreements = onOpenLamaAgreement,
+            onOpenProcesses = onOpenTreatmentProcesses,
+        )
+        return
+    }
     val costsSheetState = rememberBottomSheetState()
     var mostrarConfirmacionFinalizar by remember(ordenId) { mutableStateOf(false) }
     var mostrarFormularioProceso by remember(ordenId) { mutableStateOf(false) }
     var usoEquipoSeleccionado by remember(ordenId) { mutableStateOf<Pair<Long, Long>?>(null) }
+    var mostrandoSeguimiento by remember(ordenId) { mutableStateOf(false) }
     LaunchedEffect(ordenId) { viewModel.cargar(ordenId) }
     LaunchedEffect(ordenId, editingOrder) {
         if (editingOrder) viewModel.cargarFormularioEdicion(ordenId)
@@ -163,6 +146,7 @@ fun OrdenTrabajoDetalleScreen(
         state.cargando && state.detalle == null -> Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator(color = DetailTeal)
         }
+
         state.error != null && state.detalle == null -> Column(
             modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = Arrangement.Center,
@@ -175,15 +159,28 @@ fun OrdenTrabajoDetalleScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
             ) { Text("Reintentar") }
         }
+
         state.detalle != null -> {
             val detail = state.detalle!!
             val order = detail.orden
-            if (usoEquipoSeleccionado != null) {
-                val (processId, assignmentId) = usoEquipoSeleccionado!!
-                UsoEquipoScreen(ordenId, processId, assignmentId, onBack = {
-                    usoEquipoSeleccionado = null
+            if (mostrandoSeguimiento) {
+                SeguimientoOrdenScreen(ordenId, onBack = {
+                    mostrandoSeguimiento = false
                     viewModel.cargar(ordenId, reintentar = true)
-                })
+                }, onCosts = { processId ->
+                    mostrandoSeguimiento = false
+                    onManageProcessCosts(processId)
+                }, modifier = modifier)
+            } else if (usoEquipoSeleccionado != null) {
+                val (processId, assignmentId) = usoEquipoSeleccionado!!
+                UsoEquipoScreen(
+                    ordenId, processId, assignmentId,
+                    onBack = {
+                        usoEquipoSeleccionado = null
+                        viewModel.cargar(ordenId, reintentar = true)
+                    },
+                    modifier = modifier,
+                )
             } else if (editingOrder) {
                 EditarOrdenScreen(
                     form = state.formularioEdicion?.takeIf { it.orden.id == ordenId },
@@ -315,7 +312,7 @@ fun OrdenTrabajoDetalleScreen(
                     modifier = modifier,
                     detalle = detail,
                     puedeAgregarProceso = canCreateProcess && order.codigoEstado != 0 && order.codigoEstado != 3,
-                    puedeEditarOrden = canEditOrder,
+                    puedeEditarOrden = canEditOrder && order.tipoTrabajo != "tratamiento_lama",
                     puedeVerTrabajos = canViewEmployeeWork,
                     puedeAgregarTrabajos = canCreateEmployeeWork && order.codigoEstado != 0 && order.codigoEstado != 3,
                     puedeVerEquipos = canViewProcessEquipment,
@@ -326,10 +323,13 @@ fun OrdenTrabajoDetalleScreen(
                     puedeAgregarMateriales = canCreateProcessMaterials && order.codigoEstado != 0 && order.codigoEstado != 3,
                     onOpenSections = { costsSheetState.targetDetent = BottomSheetDetent.FullyExpanded },
                     onOpenSummary = onOpenSummary,
+                    onOpenLama = onOpenLama,
+                    onOpenCobros = onOpenCobros,
+                    onOpenTracking = { mostrandoSeguimiento = true },
                     onAddProcess = {
                         viewModel.cargarEtapasProceso(ordenId)
-                            mostrarFormularioProceso = true
-                        },
+                        mostrarFormularioProceso = true
+                    },
                     onEditOrder = {
                         onEditOrder()
                     },
@@ -353,18 +353,28 @@ fun OrdenTrabajoDetalleScreen(
                         contentColor = DetailInk,
                         toolbar = {
                             Column(Modifier.fillMaxWidth()) {
-                                Text("Más información de la orden", color = DetailInk, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "Más información de la orden",
+                                    color = DetailInk,
+                                    fontSize = 19.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                                 Text(order.codigo, color = DetailMuted, fontSize = 13.sp)
                             }
                         },
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 24.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            start = 20.dp,
+                            end = 20.dp,
+                            top = 8.dp,
+                            bottom = 24.dp
+                        ),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
                             OrdenDetalleSeccion.entries.filterNot {
                                 it == OrdenDetalleSeccion.ACUERDOS && !(canViewAgreements || canCreateAgreements || canEditAgreements || canDeleteAgreements)
-                                    || it == OrdenDetalleSeccion.LIQUIDACIONES && !(canViewLiquidations || canCreateLiquidations || canEditLiquidations || canDeleteLiquidations)
-                                    || it == OrdenDetalleSeccion.INGRESOS && !(canViewIncomes || canCreateIncomes || canEditIncomes || canDeleteIncomes)
-                                    || it == OrdenDetalleSeccion.COSTOS && !(canViewProcessCosts || canCreateProcessCosts || canEditProcessCosts || canDeleteProcessCosts)
+                                        || it == OrdenDetalleSeccion.LIQUIDACIONES && !(canViewLiquidations || canCreateLiquidations || canEditLiquidations || canDeleteLiquidations)
+                                        || it == OrdenDetalleSeccion.INGRESOS && !(canViewIncomes || canCreateIncomes || canEditIncomes || canDeleteIncomes)
+                                        || it == OrdenDetalleSeccion.COSTOS && !(canViewProcessCosts || canCreateProcessCosts || canEditProcessCosts || canDeleteProcessCosts)
                             }.forEach { item ->
                                 val count = when (item) {
                                     OrdenDetalleSeccion.COSTOS -> detail.costos.count { it.proceso.isNullOrBlank() }
@@ -412,7 +422,12 @@ fun OrdenTrabajoDetalleScreen(
                             paneTitle = "Finalizar orden",
                         ) {
                             Column {
-                                Text("¿Finalizar la orden?", color = DetailInk, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "¿Finalizar la orden?",
+                                    color = DetailInk,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                                 Spacer(Modifier.height(10.dp))
                                 Text(
                                     "Esta acción cerrará la orden y no permitirá registrar nuevos datos. Solo se puede finalizar cuando todos sus procesos estén finalizados.",
@@ -421,7 +436,9 @@ fun OrdenTrabajoDetalleScreen(
                                 )
                                 Spacer(Modifier.height(16.dp))
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                    androidx.compose.material3.TextButton(onClick = { mostrarConfirmacionFinalizar = false }) {
+                                    androidx.compose.material3.TextButton(onClick = {
+                                        mostrarConfirmacionFinalizar = false
+                                    }) {
                                         Text("Cancelar", color = DetailMuted)
                                     }
                                     Button(
@@ -496,7 +513,12 @@ fun OrdenTrabajoDetalleScreen(
                             paneTitle = "Proceso agregado",
                         ) {
                             Column {
-                                Text("Proceso agregado", color = DetailTeal, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Proceso agregado",
+                                    color = DetailTeal,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
                                 Spacer(Modifier.height(10.dp))
                                 Text(
                                     state.errorProceso ?: "El proceso ya aparece en la orden.",
@@ -535,12 +557,24 @@ fun OrdenTrabajoDetalleScreen(
                     deleting = state.eliminandoIngreso,
                     saved = state.ingresoGuardado,
                     error = state.errorIngreso,
-                    canCreate = canCreateIncomes && order.codigoEstado != 0 && order.codigoEstado != 3,
+                    canCreate = canCreateIncomes && order.codigoEstado != 0,
                     canEdit = canEditIncomes,
                     canDelete = canDeleteIncomes,
                     onLoadOptions = { viewModel.cargarOpcionesIngreso(ordenId) },
                     onSave = { income, typeId, date, description, quantity, unitId, currencyId, unitPrice, observations, options ->
-                        viewModel.guardarIngreso(ordenId, income, typeId, date, description, quantity, unitId, currencyId, unitPrice, observations, options)
+                        viewModel.guardarIngreso(
+                            ordenId,
+                            income,
+                            typeId,
+                            date,
+                            description,
+                            quantity,
+                            unitId,
+                            currencyId,
+                            unitPrice,
+                            observations,
+                            options
+                        )
                     },
                     onDelete = { viewModel.eliminarIngreso(ordenId, it) },
                     onClearMessage = viewModel::limpiarResultadoIngreso,
@@ -556,12 +590,24 @@ fun OrdenTrabajoDetalleScreen(
                     deleting = state.eliminandoAcuerdo,
                     saved = state.acuerdoGuardado,
                     error = state.errorAcuerdo,
-                    canCreate = canCreateAgreements && order.codigoEstado != 0 && order.codigoEstado != 3,
-                    canEdit = canEditAgreements && order.codigoEstado != 0 && order.codigoEstado != 3,
-                    canDelete = canDeleteAgreements && order.codigoEstado != 0 && order.codigoEstado != 3,
+                    canCreate = canCreateAgreements && order.codigoEstado != 0 && order.tipoTrabajo != "tratamiento_lama",
+                    canEdit = canEditAgreements && order.codigoEstado != 0 && order.tipoTrabajo != "tratamiento_lama",
+                    canDelete = canDeleteAgreements && order.codigoEstado != 0 && order.tipoTrabajo != "tratamiento_lama",
                     onLoadOptions = viewModel::cargarOpcionesAcuerdo,
-                    onSave = { agreementId, typeId, clientPercent, companyPercent, fee, currencyId, observations, active ->
-                        viewModel.guardarAcuerdo(ordenId, agreementId, typeId, clientPercent, companyPercent, fee, currencyId, observations, active)
+                    onSave = { agreementId, typeId, clientPercent, companyPercent, fee, currencyId, observations, active, lamaDestino, lamaEmpresa ->
+                        viewModel.guardarAcuerdo(
+                            ordenId,
+                            agreementId,
+                            typeId,
+                            clientPercent,
+                            companyPercent,
+                            fee,
+                            currencyId,
+                            observations,
+                            active,
+                            lamaDestino,
+                            lamaEmpresa
+                        )
                     },
                     onDelete = { viewModel.eliminarAcuerdo(ordenId, it) },
                     onClearMessage = viewModel::limpiarResultadoAcuerdo,
@@ -611,6 +657,9 @@ private fun OrderOverview(
     puedeAgregarMateriales: Boolean,
     onOpenSections: () -> Unit,
     onOpenSummary: () -> Unit,
+    onOpenLama: () -> Unit,
+    onOpenCobros: () -> Unit,
+    onOpenTracking: () -> Unit,
     onAddProcess: () -> Unit,
     onEditOrder: () -> Unit,
     onAddWork: (ProcesoOrdenTrabajo) -> Unit,
@@ -633,8 +682,21 @@ private fun OrderOverview(
             Column(Modifier.fillMaxWidth().padding(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(Modifier.weight(1f).padding(end = 10.dp)) {
-                        Text("ORDEN DE TRABAJO", color = DetailMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
-                        Text(order.codigo, color = DetailInk, fontSize = 23.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "ORDEN DE TRABAJO",
+                            color = DetailMuted,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            order.codigo,
+                            color = DetailInk,
+                            fontSize = 23.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                     DetailStatusBadge(order)
                 }
@@ -646,7 +708,9 @@ private fun OrderOverview(
                 Spacer(Modifier.height(18.dp))
                 DetailField("Cliente", order.cliente ?: "Sin cliente")
                 DetailField("Fecha", formatDetailDate(order.fecha))
-                DetailField("Peso mineral", order.pesoMineral?.let { "$it ${order.unidadPeso.orEmpty()}".trim() } ?: "Sin registrar")
+                DetailField(
+                    "Peso mineral",
+                    order.pesoMineral?.let { "$it ${order.unidadPeso.orEmpty()}".trim() } ?: "Sin registrar")
                 DetailField("Descripción", order.descripcion?.takeIf(String::isNotBlank) ?: "Sin descripción")
                 Button(
                     onClick = onOpenSummary,
@@ -660,8 +724,23 @@ private fun OrderOverview(
                     colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
                     shape = RoundedCornerShape(12.dp),
                 ) { Text("Ver costos, ingresos, acuerdos y liquidaciones") }
+                val cobroSession = org.koin.compose.koinInject<com.jomiro.app.mina_mobil.data.SessionRepository>().current()
+                if (cobroSession?.permissions?.any { it == "cobros.view" || it == "cobros.create" } == true) {
+                    Button(onClick = onOpenCobros, modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = DetailTeal), shape = RoundedCornerShape(12.dp)) { Text("Cobros y abonos de la OT") }
+                }
+                TextButton(onClick = onOpenLama, modifier = Modifier.fillMaxWidth()) {
+                    Text("Lama y recuperación posterior", color = DetailTeal, fontWeight = FontWeight.SemiBold)
+                }
+                if (order.tipoTrabajo == "tratamiento_lama") Text(
+                    "Tratamiento de un lote completo con cantidad estimada y reparto heredado. Registre el oro antes de finalizar esta OT.",
+                    color = DetailMuted,
+                    fontSize = 12.sp
+                )
             }
         }
+
+        SeguimientoResumen(order.id, onOpenTracking)
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -671,9 +750,21 @@ private fun OrderOverview(
         ) {
             Column(Modifier.fillMaxWidth().padding(18.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Procesos", color = DetailInk, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                    Text(
+                        "Procesos",
+                        color = DetailInk,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f)
+                    )
                     if (puedeAgregarProceso) {
-                        TextButton(onClick = onAddProcess) { Text("+ Agregar", color = DetailTeal, fontWeight = FontWeight.SemiBold) }
+                        TextButton(onClick = onAddProcess) {
+                            Text(
+                                "+ Agregar",
+                                color = DetailTeal,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
                 Text(
@@ -684,7 +775,11 @@ private fun OrderOverview(
                     modifier = Modifier.padding(top = 3.dp, bottom = 12.dp),
                 )
                 if (detalle.procesos.isEmpty()) {
-                    Text("Los procesos pueden no estar registrados o tu usuario no tiene permiso para verlos.", color = DetailMuted, fontSize = 13.sp)
+                    Text(
+                        "Los procesos pueden no estar registrados o tu usuario no tiene permiso para verlos.",
+                        color = DetailMuted,
+                        fontSize = 13.sp
+                    )
                 } else {
                     detalle.procesos.forEachIndexed { index, process ->
                         val openProcess = process.estado != "Finalizado" && process.estado != "Cancelado"
@@ -738,7 +833,11 @@ private fun EditarOrdenScreen(
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(onClick = onBack) { Text("Volver", color = DetailMuted) }
-                    Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = DetailTeal)) { Text("Reintentar") }
+                    Button(onClick = onRetry, colors = ButtonDefaults.buttonColors(containerColor = DetailTeal)) {
+                        Text(
+                            "Reintentar"
+                        )
+                    }
                 }
             }
         }
@@ -757,8 +856,8 @@ private fun EditarOrdenScreen(
 
     val parsedWeight = weight.trim().replace(',', '.').toDoubleOrNull()
     val valid = clientId > 0 && description.length <= 1000 &&
-        (form.tieneProcesos || (date.isNotBlank() && parsedWeight != null && parsedWeight > 0 && unitId != null)) &&
-        !loading && !saving && !saved
+            (form.tieneProcesos || (date.isNotBlank() && parsedWeight != null && parsedWeight > 0 && unitId != null)) &&
+            !loading && !saving && !saved
 
     Column(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
@@ -791,9 +890,16 @@ private fun EditarOrdenScreen(
                         onClick = { showDatePicker = true },
                         modifier = Modifier.fillMaxWidth().height(56.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFF1F5F6),
+                            contentColor = DetailInk
+                        ),
                     ) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
                             Column {
                                 Text("Fecha de la orden", color = DetailMuted, fontSize = 11.sp)
                                 Text(date.toDisplayDate(), color = DetailInk)
@@ -803,10 +909,15 @@ private fun EditarOrdenScreen(
                     }
                 }
                 if (!form.tieneProcesos) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         OutlinedTextField(
                             value = weight,
-                            onValueChange = { weight = it.filter { char -> char.isDigit() || char == '.' || char == ',' } },
+                            onValueChange = {
+                                weight = it.filter { char -> char.isDigit() || char == '.' || char == ',' }
+                            },
                             modifier = Modifier.weight(1f),
                             singleLine = true,
                             label = { Text("Peso mineral") },
@@ -838,7 +949,12 @@ private fun EditarOrdenScreen(
                 error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp) }
                 if (saved) {
                     Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(11.dp), color = Color(0xFFE5F4F0)) {
-                        Text("Orden actualizada correctamente.", color = Color(0xFF267A5B), modifier = Modifier.padding(12.dp), fontSize = 13.sp)
+                        Text(
+                            "Orden actualizada correctamente.",
+                            color = Color(0xFF267A5B),
+                            modifier = Modifier.padding(12.dp),
+                            fontSize = 13.sp
+                        )
                     }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -854,7 +970,11 @@ private fun EditarOrdenScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
                         shape = RoundedCornerShape(11.dp),
                     ) {
-                        if (saving) CircularProgressIndicator(Modifier.height(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        if (saving) CircularProgressIndicator(
+                            Modifier.height(18.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
                         else Text(if (saved) "Actualizada" else "Guardar cambios")
                     }
                 }
@@ -921,7 +1041,7 @@ private fun CrearProcesoDialog(
     val entrada = pesoEntrada.trim().replace(',', '.').toDoubleOrNull()
     val salida = pesoSalida.trim().replace(',', '.').toDoubleOrNull()
     val pesoValido = (pesoEntrada.isBlank() || entrada != null && entrada >= 0) &&
-        (pesoSalida.isBlank() || salida != null && salida >= 0)
+            (pesoSalida.isBlank() || salida != null && salida >= 0)
     ComposablesTheme {
         ComposablesAlertDialog(
             visible = true,
@@ -931,7 +1051,11 @@ private fun CrearProcesoDialog(
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text("Agregar proceso", color = DetailInk, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
-                Text("El código se asignará automáticamente y el proceso comenzará como Pendiente.", color = DetailMuted, fontSize = 13.sp)
+                Text(
+                    "El código se asignará automáticamente y el proceso comenzará como Pendiente.",
+                    color = DetailMuted,
+                    fontSize = 13.sp
+                )
                 Spacer(Modifier.height(12.dp))
                 Button(
                     onClick = { abrirSelectorEtapa = true },
@@ -940,7 +1064,8 @@ private fun CrearProcesoDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
                     shape = RoundedCornerShape(12.dp),
                 ) {
-                    Text(etapas.firstOrNull { it.id == etapaId }?.let { "${it.orden}. ${it.nombre}" } ?: "Seleccionar etapa", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(etapas.firstOrNull { it.id == etapaId }?.let { "${it.orden}. ${it.nombre}" }
+                        ?: "Seleccionar etapa", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (cargandoEtapas) {
                     Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -974,13 +1099,34 @@ private fun CrearProcesoDialog(
                     minLines = 2,
                     maxLines = 4,
                 )
-                error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp)) }
+                error?.let {
+                    Text(
+                        it,
+                        color = Color(0xFFB33A3A),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
                 if (etapas.isEmpty() && !cargandoEtapas) {
-                    Text("No hay etapas activas disponibles.", color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
-                    TextButton(onClick = onRetry, modifier = Modifier.align(Alignment.End)) { Text("Reintentar", color = DetailTeal) }
+                    Text(
+                        "No hay etapas activas disponibles.",
+                        color = DetailMuted,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    TextButton(onClick = onRetry, modifier = Modifier.align(Alignment.End)) {
+                        Text(
+                            "Reintentar",
+                            color = DetailTeal
+                        )
+                    }
                 }
                 Spacer(Modifier.height(12.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     TextButton(onClick = onDismiss, enabled = !creando) { Text("Cancelar", color = DetailMuted) }
                     Button(
                         onClick = {
@@ -991,7 +1137,11 @@ private fun CrearProcesoDialog(
                         colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
                         shape = RoundedCornerShape(10.dp),
                     ) {
-                        if (creando) CircularProgressIndicator(Modifier.height(18.dp), color = Color.White, strokeWidth = 2.dp)
+                        if (creando) CircularProgressIndicator(
+                            Modifier.height(18.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
                         else Text("Agregar")
                     }
                 }
@@ -1013,11 +1163,18 @@ private fun CrearProcesoDialog(
                                 onClick = { etapaId = stage.id; abrirSelectorEtapa = false },
                                 modifier = Modifier.fillMaxWidth(),
                             ) {
-                                Text("${stage.orden}. ${stage.nombre}", color = DetailInk, modifier = Modifier.fillMaxWidth())
+                                Text(
+                                    "${stage.orden}. ${stage.nombre}",
+                                    color = DetailInk,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
                             }
                         }
                     }
-                    androidx.compose.material3.TextButton(onClick = { abrirSelectorEtapa = false }, modifier = Modifier.align(Alignment.End)) {
+                    androidx.compose.material3.TextButton(
+                        onClick = { abrirSelectorEtapa = false },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
                         Text("Cerrar", color = DetailTeal)
                     }
                 }
@@ -1064,18 +1221,21 @@ private fun OrderSectionContent(
                     items(costs, key = CostoOrdenTrabajo::id) { CostEntryCard(it) }
                 }
             }
+
             OrdenDetalleSeccion.INGRESOS -> {
                 if (detail.ingresos.isEmpty()) EmptyMoneyEntries("No hay ingresos registrados para esta orden.")
                 else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     items(detail.ingresos, key = IngresoOrdenTrabajo::id) { IncomeEntryCard(it) }
                 }
             }
+
             OrdenDetalleSeccion.ACUERDOS -> {
                 if (detail.acuerdos.isEmpty()) EmptyMoneyEntries("No hay acuerdos de participación para esta orden.")
                 else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     items(detail.acuerdos, key = AcuerdoOrdenTrabajo::id) { AgreementEntryCard(it) }
                 }
             }
+
             OrdenDetalleSeccion.LIQUIDACIONES -> {
                 if (detail.liquidaciones.isEmpty()) EmptyMoneyEntries("No hay liquidaciones registradas para esta orden.")
                 else LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -1106,7 +1266,14 @@ private fun CostEntryCard(entry: CostoOrdenTrabajo) {
         entry.descripcion?.takeIf(String::isNotBlank)?.let {
             Text(it, color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp))
         }
-        entry.cantidad?.let { Text("Cantidad: $it", color = DetailMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 5.dp)) }
+        entry.cantidad?.let {
+            Text(
+                "Cantidad: $it",
+                color = DetailMuted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 5.dp)
+            )
+        }
     }
 }
 
@@ -1131,8 +1298,17 @@ private fun AgreementEntryCard(entry: AcuerdoOrdenTrabajo) {
     MoneyEntrySurface {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                Text(entry.tipoParticipacion ?: "Acuerdo", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-                Text(if (entry.modalidad == "tarifa") "Tarifa de servicio" else "Participación", color = DetailMuted, fontSize = 12.sp)
+                Text(
+                    entry.tipoParticipacion ?: "Acuerdo",
+                    color = DetailInk,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    if (entry.modalidad == "tarifa") "Tarifa de servicio" else "Participación",
+                    color = DetailMuted,
+                    fontSize = 12.sp
+                )
             }
             Surface(
                 shape = RoundedCornerShape(50),
@@ -1148,7 +1324,9 @@ private fun AgreementEntryCard(entry: AcuerdoOrdenTrabajo) {
         }
         if (entry.modalidad == "tarifa") {
             Text(
-                "Tarifa: ${listOfNotNull(entry.moneda, entry.tarifaServicio).joinToString(" ").ifBlank { "Sin monto" }}",
+                "Tarifa: ${
+                    listOfNotNull(entry.moneda, entry.tarifaServicio).joinToString(" ").ifBlank { "Sin monto" }
+                }",
                 color = DetailInk,
                 fontSize = 13.sp,
                 modifier = Modifier.padding(top = 8.dp),
@@ -1175,11 +1353,16 @@ private fun LiquidationEntryCard(entry: LiquidacionOrdenTrabajo) {
                 Text("Liquidación de oro", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
                 Text(formatDetailDate(entry.fecha), color = DetailMuted, fontSize = 12.sp)
             }
-            Text("${entry.gramosRecuperados ?: "—"} g", color = DetailTeal, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text(
+                "${entry.gramosRecuperados ?: "—"} g",
+                color = DetailTeal,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
         Text(
             "Cliente: ${entry.gramosCliente ?: "—"} g (${entry.porcentajeCliente ?: "—"}%)  ·  " +
-                "Empresa: ${entry.gramosEmpresa ?: "—"} g (${entry.porcentajeEmpresa ?: "—"}%)",
+                    "Empresa: ${entry.gramosEmpresa ?: "—"} g (${entry.porcentajeEmpresa ?: "—"}%)",
             color = DetailInk,
             fontSize = 13.sp,
             modifier = Modifier.padding(top = 8.dp),
@@ -1245,18 +1428,33 @@ private fun ProcessCard(
         Column(Modifier.padding(13.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f).padding(end = 8.dp)) {
-                    Text(process.etapa ?: "Proceso ${process.codigo}", color = DetailInk, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        process.etapa ?: "Proceso ${process.codigo}",
+                        color = DetailInk,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     Text("Código ${process.codigo}", color = DetailMuted, fontSize = 12.sp)
                 }
                 Surface(shape = RoundedCornerShape(50), color = DetailTeal.copy(alpha = 0.1f)) {
-                    Text(process.estado, color = DetailTeal, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
+                    Text(
+                        process.estado,
+                        color = DetailTeal,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
                 }
             }
             val dates = listOfNotNull(
                 process.fechaInicio?.let { "Inicio: ${formatDetailDate(it)}" },
                 process.fechaFin?.let { "Fin: ${formatDetailDate(it)}" },
             )
-            if (dates.isNotEmpty()) Text(dates.joinToString("  ·  "), color = DetailMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 9.dp))
+            if (dates.isNotEmpty()) Text(
+                dates.joinToString("  ·  "),
+                color = DetailMuted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 9.dp)
+            )
             if (process.pesoEntrada != null || process.pesoSalida != null) {
                 Text(
                     "Entrada: ${process.pesoEntrada ?: "—"}  ·  Salida: ${process.pesoSalida ?: "—"}",
@@ -1273,16 +1471,35 @@ private fun ProcessCard(
                 Text("Trabajos de empleados", color = DetailInk, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 trabajos.forEach { work ->
                     Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                        Text("${work.empleado ?: "Empleado"} · ${work.tipoPago ?: "Trabajo"}", color = DetailInk, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         Text(
-                            listOfNotNull(work.fecha?.let(::formatDetailDate), listOfNotNull(work.cantidad, work.unidad).joinToString(" ").takeIf(String::isNotBlank))
+                            "${work.empleado ?: "Empleado"} · ${work.tipoPago ?: "Trabajo"}",
+                            color = DetailInk,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            listOfNotNull(
+                                work.fecha?.let(::formatDetailDate),
+                                listOfNotNull(work.cantidad, work.unidad).joinToString(" ").takeIf(String::isNotBlank)
+                            )
                                 .joinToString(" · "),
                             color = DetailMuted,
                             fontSize = 11.sp,
                         )
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(listOfNotNull(work.moneda, work.total).joinToString(" ").ifBlank { "—" }, color = DetailInk, fontSize = 11.sp)
-                            work.totalNio?.let { Text("C$ $it", color = DetailTeal, fontSize = 11.sp, fontWeight = FontWeight.Medium) }
+                            Text(
+                                listOfNotNull(work.moneda, work.total).joinToString(" ").ifBlank { "—" },
+                                color = DetailInk,
+                                fontSize = 11.sp
+                            )
+                            work.totalNio?.let {
+                                Text(
+                                    "C$ $it",
+                                    color = DetailTeal,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
                     }
                 }
@@ -1305,13 +1522,23 @@ private fun ProcessCard(
                             fontWeight = FontWeight.Medium,
                         )
                         Text(
-                            "Inicio: ${assignment.inicio?.let(::formatDetailDateTime) ?: "—"} · Fin: ${assignment.fin?.let(::formatDetailDateTime) ?: "Sigue asignado"}",
+                            "Inicio: ${assignment.inicio?.let(::formatDetailDateTime) ?: "—"} · Fin: ${
+                                assignment.fin?.let(
+                                    ::formatDetailDateTime
+                                ) ?: "Sigue asignado"
+                            }",
                             color = DetailMuted,
                             fontSize = 11.sp,
                         )
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(assignment.horasEfectivas?.let { "${it.displayDecimal()} horas efectivas" } ?: "Horas pendientes / histórico", color = DetailMuted, fontSize = 11.sp)
-                            Text("Costo ${assignment.costoTotalNio.displayDecimal()} NIO", color = DetailTeal, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                            Text(assignment.horasEfectivas?.let { "${it.displayDecimal()} horas efectivas" }
+                                ?: "Horas pendientes / histórico", color = DetailMuted, fontSize = 11.sp)
+                            Text(
+                                "Costo ${assignment.costoTotalNio.displayDecimal()} NIO",
+                                color = DetailTeal,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                         assignment.observaciones?.takeIf(String::isNotBlank)?.let {
                             Text(it, color = DetailMuted, fontSize = 11.sp)
@@ -1332,7 +1559,11 @@ private fun ProcessCard(
                     onClick = onManageCosts,
                     modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
                 ) {
-                    Text("Costos del proceso${if (process.costos.isNotEmpty()) " (${process.costos.size})" else ""}", color = DetailTeal, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Costos del proceso${if (process.costos.isNotEmpty()) " (${process.costos.size})" else ""}",
+                        color = DetailTeal,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
             if (puedeVerMateriales || puedeAgregarMateriales) {
@@ -1340,7 +1571,11 @@ private fun ProcessCard(
                     onClick = onManageMaterials,
                     modifier = Modifier.align(Alignment.End).padding(top = 2.dp),
                 ) {
-                    Text("Materia prima${if (process.materiales.isNotEmpty()) " (${process.materiales.size})" else ""}", color = DetailTeal, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Materia prima${if (process.materiales.isNotEmpty()) " (${process.materiales.size})" else ""}",
+                        color = DetailTeal,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }
@@ -1363,7 +1598,8 @@ private fun CrearTrabajoEmpleadoScreen(
     onCreate: (Long, Long, String, String?, String?, Double, Long, String, String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val today = kotlin.time.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date.toString()
+    val today =
+        kotlin.time.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.currentSystemDefault()).date.toString()
     var employeeId by remember(process.id) { mutableStateOf<Long?>(null) }
     var paymentTypeId by remember(process.id) { mutableStateOf<Long?>(null) }
     var unitId by remember(process.id) { mutableStateOf<Long?>(null) }
@@ -1384,130 +1620,199 @@ private fun CrearTrabajoEmpleadoScreen(
     LaunchedEffect(employeeId, paymentTypeId, date) { onQuote(employeeId, paymentTypeId, date) }
     val quantityValue = quantity.trim().replace(',', '.').toDoubleOrNull()
     val timeValid = (startTime.isBlank() || startTime.matches(Regex("\\d{2}:\\d{2}"))) &&
-        (endTime.isBlank() || endTime.matches(Regex("\\d{2}:\\d{2}"))) &&
-        (startTime.isBlank() || endTime.isBlank() || endTime >= startTime)
+            (endTime.isBlank() || endTime.matches(Regex("\\d{2}:\\d{2}"))) &&
+            (startTime.isBlank() || endTime.isBlank() || endTime >= startTime)
     val selectedEmployee = opciones?.empleados?.firstOrNull { it.id == employeeId }
     val selectedType = opciones?.tiposPago?.firstOrNull { it.id == paymentTypeId }
     val selectedUnit = opciones?.unidades?.firstOrNull { it.id == unitId }
     val canSubmit = selectedEmployee != null && selectedType != null && selectedUnit != null &&
-        tarifa != null && quantityValue != null && quantityValue >= 0 && timeValid && date.isNotBlank() &&
-        !cargandoOpciones && !cargandoTarifa && !creando && !agregado
+            tarifa != null && quantityValue != null && quantityValue >= 0 && timeValid && date.isNotBlank() &&
+            !cargandoOpciones && !cargandoTarifa && !creando && !agregado
     val total = tarifa?.let { if (it.metodoCalculo == "TARIFA") it.tarifa else it.tarifa * (quantityValue ?: 0.0) }
-    val totalNio = tarifa?.let { if (it.metodoCalculo == "TARIFA") it.tarifaNio else it.tarifaNio * (quantityValue ?: 0.0) }
+    val totalNio =
+        tarifa?.let { if (it.metodoCalculo == "TARIFA") it.tarifaNio else it.tarifaNio * (quantityValue ?: 0.0) }
 
     Column(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-                Text("Registrar trabajo del empleado", color = DetailInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                Text("Proceso ${process.codigo} · ${process.etapa.orEmpty()}", color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp, bottom = 12.dp))
-                EmployeeWorkPickerButton("Empleado", selectedEmployee?.let { "${it.codigo.orEmpty()} · ${it.nombre}" }, !cargandoOpciones) {
-                    openSelector = "employee"
+        Text("Registrar trabajo del empleado", color = DetailInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Proceso ${process.codigo} · ${process.etapa.orEmpty()}",
+            color = DetailMuted,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(top = 3.dp, bottom = 12.dp)
+        )
+        EmployeeWorkPickerButton(
+            "Empleado",
+            selectedEmployee?.let { "${it.codigo.orEmpty()} · ${it.nombre}" },
+            !cargandoOpciones
+        ) {
+            openSelector = "employee"
+        }
+        EmployeeWorkPickerButton("Tipo de pago", selectedType?.nombre, !cargandoOpciones) {
+            openSelector = "payment"
+        }
+        Button(
+            onClick = { showDatePicker = true },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(52.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
+            shape = RoundedCornerShape(11.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text("Fecha", color = DetailMuted, fontSize = 10.sp)
+                    Text(date.toDisplayDate(), color = DetailInk, fontSize = 13.sp)
                 }
-                EmployeeWorkPickerButton("Tipo de pago", selectedType?.nombre, !cargandoOpciones) {
-                    openSelector = "payment"
-                }
-                Button(
-                    onClick = { showDatePicker = true },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(52.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F6), contentColor = DetailInk),
-                    shape = RoundedCornerShape(11.dp),
-                ) {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                        Column {
-                            Text("Fecha", color = DetailMuted, fontSize = 10.sp)
-                            Text(date.toDisplayDate(), color = DetailInk, fontSize = 13.sp)
-                        }
-                        Text("▦", color = DetailTeal, fontSize = 18.sp)
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    EmployeeTimePickerButton(
-                        label = "Hora inicio",
-                        value = startTime,
-                        modifier = Modifier.weight(1f),
-                    ) { showTimePicker = "start" }
-                    EmployeeTimePickerButton(
-                        label = "Hora fin",
-                        value = endTime,
-                        modifier = Modifier.weight(1f),
-                    ) { showTimePicker = "end" }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = quantity,
-                        onValueChange = { quantity = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
-                        modifier = Modifier.weight(1f),
-                        label = { Text("Cantidad") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                Text("▦", color = DetailTeal, fontSize = 18.sp)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            EmployeeTimePickerButton(
+                label = "Hora inicio",
+                value = startTime,
+                modifier = Modifier.weight(1f),
+            ) { showTimePicker = "start" }
+            EmployeeTimePickerButton(
+                label = "Hora fin",
+                value = endTime,
+                modifier = Modifier.weight(1f),
+            ) { showTimePicker = "end" }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = quantity,
+                onValueChange = { quantity = it.filter { ch -> ch.isDigit() || ch == '.' || ch == ',' } },
+                modifier = Modifier.weight(1f),
+                label = { Text("Cantidad") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+            )
+            EmployeeWorkPickerButton("Unidad", selectedUnit?.nombre, !cargandoOpciones, Modifier.weight(1f)) {
+                openSelector = "unit"
+            }
+        }
+        if (cargandoOpciones) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                CircularProgressIndicator(Modifier.height(18.dp), color = DetailTeal, strokeWidth = 2.dp)
+                Text("  Cargando datos del formulario…", color = DetailMuted, fontSize = 12.sp)
+            }
+        }
+        if (cargandoTarifa) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
+                CircularProgressIndicator(Modifier.height(18.dp), color = DetailTeal, strokeWidth = 2.dp)
+                Text("  Consultando tarifa vigente…", color = DetailMuted, fontSize = 12.sp)
+            }
+        }
+        tarifa?.let { rate ->
+            Surface(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFFF1F5F6)
+            ) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Tarifa: ${rate.tarifa} ${rate.moneda}", color = DetailInk, fontSize = 13.sp)
+                    Text("Tarifa NIO: C$ ${rate.tarifaNio}", color = DetailMuted, fontSize = 12.sp)
+                    Text(
+                        "Total estimado: ${total?.let(::moneyValue) ?: "—"} ${rate.moneda} · C$ ${totalNio?.let(::moneyValue) ?: "—"}",
+                        color = DetailTeal,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
-                    EmployeeWorkPickerButton("Unidad", selectedUnit?.nombre, !cargandoOpciones, Modifier.weight(1f)) {
-                        openSelector = "unit"
-                    }
                 }
-                if (cargandoOpciones) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-                        CircularProgressIndicator(Modifier.height(18.dp), color = DetailTeal, strokeWidth = 2.dp)
-                        Text("  Cargando datos del formulario…", color = DetailMuted, fontSize = 12.sp)
-                    }
+            }
+        }
+        OutlinedTextField(
+            value = description,
+            onValueChange = { if (it.length <= 255) description = it },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            label = { Text("Descripción") },
+            singleLine = true
+        )
+        OutlinedTextField(
+            value = observations,
+            onValueChange = { observations = it },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            label = { Text("Observaciones") },
+            minLines = 2,
+            maxLines = 4
+        )
+        error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
+        if (opciones != null && (opciones.empleados.isEmpty() || opciones.tiposPago.isEmpty() || opciones.unidades.isEmpty())) {
+            Text(
+                "No hay empleados, tipos de pago o unidades activas disponibles.",
+                color = DetailMuted,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+        if (opciones == null && !cargandoOpciones) {
+            TextButton(onClick = onRetryOptions, modifier = Modifier.align(Alignment.End)) {
+                Text(
+                    "Reintentar",
+                    color = DetailTeal
+                )
+            }
+        }
+        if (agregado) {
+            Surface(
+                Modifier.fillMaxWidth().padding(top = 12.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFFE5F4F0)
+            ) {
+                Column(Modifier.padding(13.dp)) {
+                    Text(
+                        "Trabajo registrado",
+                        color = Color(0xFF267A5B),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        error ?: "El trabajo ya aparece en el proceso.",
+                        color = Color(0xFF267A5B),
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(top = 3.dp)
+                    )
                 }
-                if (cargandoTarifa) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-                        CircularProgressIndicator(Modifier.height(18.dp), color = DetailTeal, strokeWidth = 2.dp)
-                        Text("  Consultando tarifa vigente…", color = DetailMuted, fontSize = 12.sp)
-                    }
-                }
-                tarifa?.let { rate ->
-                    Surface(Modifier.fillMaxWidth().padding(top = 8.dp), shape = RoundedCornerShape(12.dp), color = Color(0xFFF1F5F6)) {
-                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("Tarifa: ${rate.tarifa} ${rate.moneda}", color = DetailInk, fontSize = 13.sp)
-                            Text("Tarifa NIO: C$ ${rate.tarifaNio}", color = DetailMuted, fontSize = 12.sp)
-                            Text("Total estimado: ${total?.let(::moneyValue) ?: "—"} ${rate.moneda} · C$ ${totalNio?.let(::moneyValue) ?: "—"}", color = DetailTeal, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-                OutlinedTextField(value = description, onValueChange = { if (it.length <= 255) description = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Descripción") }, singleLine = true)
-                OutlinedTextField(value = observations, onValueChange = { observations = it }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp), label = { Text("Observaciones") }, minLines = 2, maxLines = 4)
-                error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
-                if (opciones != null && (opciones.empleados.isEmpty() || opciones.tiposPago.isEmpty() || opciones.unidades.isEmpty())) {
-                    Text("No hay empleados, tipos de pago o unidades activas disponibles.", color = DetailMuted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
-                }
-                if (opciones == null && !cargandoOpciones) {
-                    TextButton(onClick = onRetryOptions, modifier = Modifier.align(Alignment.End)) { Text("Reintentar", color = DetailTeal) }
-                }
-                if (agregado) {
-                    Surface(Modifier.fillMaxWidth().padding(top = 12.dp), shape = RoundedCornerShape(12.dp), color = Color(0xFFE5F4F0)) {
-                        Column(Modifier.padding(13.dp)) {
-                            Text("Trabajo registrado", color = Color(0xFF267A5B), fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-                            Text(error ?: "El trabajo ya aparece en el proceso.", color = Color(0xFF267A5B), fontSize = 12.sp, modifier = Modifier.padding(top = 3.dp))
-                        }
-                    }
-                }
-                Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onBack, enabled = !creando, modifier = Modifier.weight(1f)) { Text("Volver al proceso", color = DetailMuted) }
-                    Button(
-                        onClick = {
-                            onCreate(
-                                employeeId ?: return@Button,
-                                paymentTypeId ?: return@Button,
-                                date,
-                                startTime.takeIf(String::isNotBlank),
-                                endTime.takeIf(String::isNotBlank),
-                                quantityValue ?: return@Button,
-                                unitId ?: return@Button,
-                                description,
-                                observations,
-                            )
-                        },
-                        enabled = canSubmit,
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
-                        shape = RoundedCornerShape(10.dp),
-                    ) {
-                        if (creando) CircularProgressIndicator(Modifier.height(18.dp), color = Color.White, strokeWidth = 2.dp)
-                        else Text(if (agregado) "Registrado" else "Guardar trabajo")
-                    }
-                }
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onBack, enabled = !creando, modifier = Modifier.weight(1f)) {
+                Text(
+                    "Volver al proceso",
+                    color = DetailMuted
+                )
+            }
+            Button(
+                onClick = {
+                    onCreate(
+                        employeeId ?: return@Button,
+                        paymentTypeId ?: return@Button,
+                        date,
+                        startTime.takeIf(String::isNotBlank),
+                        endTime.takeIf(String::isNotBlank),
+                        quantityValue ?: return@Button,
+                        unitId ?: return@Button,
+                        description,
+                        observations,
+                    )
+                },
+                enabled = canSubmit,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
+                shape = RoundedCornerShape(10.dp),
+            ) {
+                if (creando) CircularProgressIndicator(Modifier.height(18.dp), color = Color.White, strokeWidth = 2.dp)
+                else Text(if (agregado) "Registrado" else "Guardar trabajo")
+            }
+        }
     }
 
     val choices = when (openSelector) {
@@ -1517,7 +1822,9 @@ private fun CrearTrabajoEmpleadoScreen(
         else -> emptyList()
     }
     if (openSelector != null) EmployeeWorkOptionsDialog(
-        title = when (openSelector) { "employee" -> "Seleccionar empleado"; "payment" -> "Tipo de pago"; else -> "Seleccionar unidad" },
+        title = when (openSelector) {
+            "employee" -> "Seleccionar empleado"; "payment" -> "Tipo de pago"; else -> "Seleccionar unidad"
+        },
         options = choices,
         onSelect = { id ->
             when (openSelector) {
@@ -1592,7 +1899,11 @@ private fun EmployeeTimePickerDialog(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismiss) { Text("Cancelar", color = DetailMuted) }
                     TextButton(onClick = {
-                        onSelect("${pickerState.hour.toString().padStart(2, '0')}:${pickerState.minute.toString().padStart(2, '0')}")
+                        onSelect(
+                            "${pickerState.hour.toString().padStart(2, '0')}:${
+                                pickerState.minute.toString().padStart(2, '0')
+                            }"
+                        )
                     }) { Text("Aceptar", color = DetailTeal) }
                 }
             }
@@ -1601,7 +1912,13 @@ private fun EmployeeTimePickerDialog(
 }
 
 @Composable
-private fun EmployeeWorkPickerButton(label: String, value: String?, enabled: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun EmployeeWorkPickerButton(
+    label: String,
+    value: String?,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     Button(
         onClick = onClick,
         enabled = enabled,
@@ -1611,13 +1928,24 @@ private fun EmployeeWorkPickerButton(label: String, value: String?, enabled: Boo
     ) {
         Column(Modifier.fillMaxWidth()) {
             Text(label, color = DetailMuted, fontSize = 10.sp)
-            Text(value ?: "Seleccionar", color = DetailInk, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                value ?: "Seleccionar",
+                color = DetailInk,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }
 
 @Composable
-private fun EmployeeWorkOptionsDialog(title: String, options: List<Pair<Long, String>>, onSelect: (Long) -> Unit, onDismiss: () -> Unit) {
+private fun EmployeeWorkOptionsDialog(
+    title: String,
+    options: List<Pair<Long, String>>,
+    onSelect: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
     ComposablesTheme {
         ComposablesAlertDialog(visible = true, onDismissRequest = onDismiss, paneTitle = title) {
             Column {
@@ -1628,9 +1956,20 @@ private fun EmployeeWorkOptionsDialog(title: String, options: List<Pair<Long, St
                             Text(label, color = DetailInk, modifier = Modifier.fillMaxWidth())
                         }
                     }
-                    if (options.isEmpty()) item { Text("No hay opciones disponibles.", color = DetailMuted, modifier = Modifier.padding(12.dp)) }
+                    if (options.isEmpty()) item {
+                        Text(
+                            "No hay opciones disponibles.",
+                            color = DetailMuted,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
                 }
-                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("Cerrar", color = DetailTeal) }
+                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                    Text(
+                        "Cerrar",
+                        color = DetailTeal
+                    )
+                }
             }
         }
     }
@@ -1648,7 +1987,13 @@ private fun DetailStatusBadge(order: OrdenTrabajo) {
         else -> Color(0xFFF0F2F4) to DetailMuted
     }
     Surface(shape = RoundedCornerShape(50), color = background) {
-        Text(order.estado, color = foreground, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp))
+        Text(
+            order.estado,
+            color = foreground,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)
+        )
     }
 }
 
@@ -1673,7 +2018,13 @@ private fun AsignarEquipoScreen(
     val now = kotlin.time.Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault())
     var equipmentId by remember(process.id) { mutableStateOf<Long?>(null) }
     var startDate by remember(process.id) { mutableStateOf(now.date.toString()) }
-    var startTime by remember(process.id) { mutableStateOf("${now.hour.toString().padStart(2, '0')}:${now.minute.toString().padStart(2, '0')}") }
+    var startTime by remember(process.id) {
+        mutableStateOf(
+            "${
+                now.hour.toString().padStart(2, '0')
+            }:${now.minute.toString().padStart(2, '0')}"
+        )
+    }
     var endDate by remember(process.id) { mutableStateOf(now.date.toString()) }
     var endTime by remember(process.id) { mutableStateOf(startTime) }
     var sigueAsignado by remember(process.id) { mutableStateOf(true) }
@@ -1704,18 +2055,25 @@ private fun AsignarEquipoScreen(
     val selectedEquipment = options?.equipos?.firstOrNull { it.id == equipmentId }
     val startValid = startDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) && startTime.matches(Regex("\\d{2}:\\d{2}"))
     val endValid = sigueAsignado || (
-        endDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) &&
-            endTime.matches(Regex("\\d{2}:\\d{2}")) && end.orEmpty() > start
-        )
-    val hoursValid = effectiveHours.isBlank() || (effectiveHours.replace(',', '.').toDoubleOrNull()?.let { it >= 0 && it.isFinite() } == true)
+            endDate.matches(Regex("\\d{4}-\\d{2}-\\d{2}")) &&
+                    endTime.matches(Regex("\\d{2}:\\d{2}")) && end.orEmpty() > start
+            )
+    val hoursValid = effectiveHours.isBlank() || (effectiveHours.replace(',', '.').toDoubleOrNull()
+        ?.let { it >= 0 && it.isFinite() } == true)
     val canSave = selectedEquipment != null && startValid && endValid && hoursValid && estimate != null &&
-        estimate.solapamiento == null && estimate.disponible && estimate.tarifaConfigurada && !loadingOptions && !estimating && !saving && !assigned
+            estimate.solapamiento == null && estimate.disponible && estimate.tarifaConfigurada && !loadingOptions && !estimating && !saving && !assigned
 
     Column(
-        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 14.dp),
+        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Text("Asignar equipo al proceso", color = DetailInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-        Text("Proceso ${process.codigo} · ${process.etapa.orEmpty()}", color = DetailMuted, fontSize = 13.sp, modifier = Modifier.padding(top = 3.dp))
+        Text(
+            "Proceso ${process.codigo} · ${process.etapa.orEmpty()}",
+            color = DetailMuted,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(top = 3.dp)
+        )
         Surface(
             modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
             shape = RoundedCornerShape(13.dp),
@@ -1737,10 +2095,23 @@ private fun AsignarEquipoScreen(
             colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = DetailInk),
             shape = RoundedCornerShape(11.dp),
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Column {
-                    Text(selectedEquipment?.codigo ?: "Seleccionar equipo", color = DetailTeal, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                    Text(selectedEquipment?.nombre ?: "Elija molino, taladro u otro equipo", color = DetailInk, fontSize = 14.sp)
+                    Text(
+                        selectedEquipment?.codigo ?: "Seleccionar equipo",
+                        color = DetailTeal,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        selectedEquipment?.nombre ?: "Elija molino, taladro u otro equipo",
+                        color = DetailInk,
+                        fontSize = 14.sp
+                    )
                 }
                 Text("⌄", color = DetailMuted, fontSize = 19.sp)
             }
@@ -1754,7 +2125,13 @@ private fun AsignarEquipoScreen(
             )
         }
 
-        Text("Periodo de uso", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 17.dp, bottom = 5.dp))
+        Text(
+            "Periodo de uso",
+            color = DetailInk,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 17.dp, bottom = 5.dp)
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
             EquipmentDateButton("Inicio", startDate, Modifier.weight(1f)) { calendarioAbierto = "start" }
             EquipmentTimeButton("Hora de inicio", startTime, Modifier.weight(1f)) { relojAbierto = "start" }
@@ -1785,32 +2162,76 @@ private fun AsignarEquipoScreen(
             isError = !hoursValid,
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
         )
-        Text("Costo estimado del equipo", color = DetailInk, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 18.dp, bottom = 7.dp))
-        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(13.dp), color = Color.White, shadowElevation = 1.dp) {
+        Text(
+            "Costo estimado del equipo",
+            color = DetailInk,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 18.dp, bottom = 7.dp)
+        )
+        Surface(
+            Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(13.dp),
+            color = Color.White,
+            shadowElevation = 1.dp
+        ) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 when {
                     loadingOptions || estimating -> Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(Modifier.height(18.dp), color = DetailTeal, strokeWidth = 2.dp)
                         Text("  Calculando duración y costos…", color = DetailMuted, fontSize = 12.sp)
                     }
+
                     estimate != null -> {
                         EquipmentInfoRow("Horas efectivas", effectiveHours.ifBlank { "Pendientes" })
                         EquipmentInfoRow("Depreciación por hora", (estimate.depreciacionDiaria / 24).displayDecimal())
-                        EquipmentInfoRow("Depreciación por trabajo", estimate.depreciacionTotal.displayDecimal(), emphasized = true)
+                        EquipmentInfoRow(
+                            "Depreciación por trabajo",
+                            estimate.depreciacionTotal.displayDecimal(),
+                            emphasized = true
+                        )
                         EquipmentInfoRow("Energía estimada", "${estimate.energiaKwh.displayDecimal()} kWh")
                         EquipmentInfoRow("Costo eléctrico", "NIO ${estimate.costoEnergiaNio.displayDecimal()}")
-                        EquipmentInfoRow("Costo por horas", "NIO ${estimate.costoTotalNio.displayDecimal()}", emphasized = true)
+                        EquipmentInfoRow(
+                            "Costo por horas",
+                            "NIO ${estimate.costoTotalNio.displayDecimal()}",
+                            emphasized = true
+                        )
                         selectedEquipment?.recursos?.forEach { recurso ->
                             val horas = effectiveHours.replace(',', '.').toDoubleOrNull() ?: 0.0
-                            EquipmentInfoRow(recurso.nombre, "${(recurso.cantidadPorHora * horas).displayDecimal()} ${recurso.unidad} estimados")
+                            EquipmentInfoRow(
+                                recurso.nombre,
+                                "${(recurso.cantidadPorHora * horas).displayDecimal()} ${recurso.unidad} estimados"
+                            )
                         }
-                        EquipmentInfoRow("Referencia con insumos", "NIO ${estimate.costoConInsumosEstimados.displayDecimal()}")
-                        Text("El consumo estimado se sustituye por el registrado en Trabajo efectivo y consumos. En Offline, los costos son provisionales hasta sincronizar.", color = DetailMuted, fontSize = 11.sp)
-                        if (!estimate.tarifaConfigurada) Text("Configure la tarifa general por kWh desde la web antes de asignar este equipo.", color = Color(0xFFB33A3A), fontSize = 12.sp)
-                        if (!estimate.disponible) Text("El equipo ya alcanzó su valor residual y no tiene valor por depreciar.", color = Color(0xFFB33A3A), fontSize = 12.sp)
+                        EquipmentInfoRow(
+                            "Referencia con insumos",
+                            "NIO ${estimate.costoConInsumosEstimados.displayDecimal()}"
+                        )
+                        Text(
+                            "El consumo estimado se sustituye por el registrado en Trabajo efectivo y consumos. En Offline, los costos son provisionales hasta sincronizar.",
+                            color = DetailMuted,
+                            fontSize = 11.sp
+                        )
+                        if (!estimate.tarifaConfigurada) Text(
+                            "Configure la tarifa general por kWh desde la web antes de asignar este equipo.",
+                            color = Color(0xFFB33A3A),
+                            fontSize = 12.sp
+                        )
+                        if (!estimate.disponible) Text(
+                            "El equipo ya alcanzó su valor residual y no tiene valor por depreciar.",
+                            color = Color(0xFFB33A3A),
+                            fontSize = 12.sp
+                        )
                         estimate.solapamiento?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 12.sp) }
                     }
-                    options?.equipos?.isEmpty() == true -> Text("No hay equipos activos disponibles.", color = DetailMuted, fontSize = 13.sp)
+
+                    options?.equipos?.isEmpty() == true -> Text(
+                        "No hay equipos activos disponibles.",
+                        color = DetailMuted,
+                        fontSize = 13.sp
+                    )
+
                     else -> Text("Seleccione un equipo para calcular su costo.", color = DetailMuted, fontSize = 13.sp)
                 }
             }
@@ -1826,18 +2247,50 @@ private fun AsignarEquipoScreen(
         )
         error?.let { Text(it, color = Color(0xFFB33A3A), fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp)) }
         if (options == null && !loadingOptions) {
-            TextButton(onClick = onLoadOptions, modifier = Modifier.align(Alignment.End)) { Text("Reintentar carga", color = DetailTeal) }
+            TextButton(onClick = onLoadOptions, modifier = Modifier.align(Alignment.End)) {
+                Text(
+                    "Reintentar carga",
+                    color = DetailTeal
+                )
+            }
         }
 
         if (assigned) {
-            Surface(Modifier.fillMaxWidth().padding(top = 14.dp), shape = RoundedCornerShape(12.dp), color = Color(0xFFE5F4F0)) {
-                Text("El equipo se asignó correctamente al proceso.", color = Color(0xFF267A5B), modifier = Modifier.padding(13.dp), fontSize = 14.sp)
+            Surface(
+                Modifier.fillMaxWidth().padding(top = 14.dp),
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFFE5F4F0)
+            ) {
+                Text(
+                    "El equipo se asignó correctamente al proceso.",
+                    color = Color(0xFF267A5B),
+                    modifier = Modifier.padding(13.dp),
+                    fontSize = 14.sp
+                )
             }
         }
-        Row(Modifier.fillMaxWidth().padding(top = 17.dp, bottom = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextButton(onClick = onBack, enabled = !saving, modifier = Modifier.weight(1f)) { Text("Volver al proceso", color = DetailMuted) }
+        Row(
+            Modifier.fillMaxWidth().padding(top = 17.dp, bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            TextButton(onClick = onBack, enabled = !saving, modifier = Modifier.weight(1f)) {
+                Text(
+                    "Volver al proceso",
+                    color = DetailMuted
+                )
+            }
             Button(
-                onClick = { equipmentId?.let { onAssign(it, start, end, observations, effectiveHours.replace(',', '.').toDoubleOrNull()) } },
+                onClick = {
+                    equipmentId?.let {
+                        onAssign(
+                            it,
+                            start,
+                            end,
+                            observations,
+                            effectiveHours.replace(',', '.').toDoubleOrNull()
+                        )
+                    }
+                },
                 enabled = canSave,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = DetailTeal),
@@ -1849,13 +2302,36 @@ private fun AsignarEquipoScreen(
         }
 
         if (existingEquipment.isNotEmpty()) {
-            Text("Equipos ya registrados en este proceso", color = DetailInk, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 4.dp, bottom = 6.dp))
+            Text(
+                "Equipos ya registrados en este proceso",
+                color = DetailInk,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(top = 4.dp, bottom = 6.dp)
+            )
             existingEquipment.forEach { assignment ->
-                Surface(Modifier.fillMaxWidth().padding(bottom = 7.dp), shape = RoundedCornerShape(11.dp), color = Color.White) {
+                Surface(
+                    Modifier.fillMaxWidth().padding(bottom = 7.dp),
+                    shape = RoundedCornerShape(11.dp),
+                    color = Color.White
+                ) {
                     Column(Modifier.padding(12.dp)) {
-                        Text("${assignment.codigoEquipo.orEmpty()} · ${assignment.nombreEquipo.orEmpty()}", color = DetailInk, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                        Text("${formatDetailDateTime(assignment.inicio)} – ${assignment.fin?.let(::formatDetailDateTime) ?: "Sigue asignado"}", color = DetailMuted, fontSize = 12.sp)
-                        Text("Depreciación registrada: ${assignment.depreciacionTotal.displayDecimal()}", color = DetailTeal, fontSize = 12.sp)
+                        Text(
+                            "${assignment.codigoEquipo.orEmpty()} · ${assignment.nombreEquipo.orEmpty()}",
+                            color = DetailInk,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            "${formatDetailDateTime(assignment.inicio)} – ${assignment.fin?.let(::formatDetailDateTime) ?: "Sigue asignado"}",
+                            color = DetailMuted,
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            "Depreciación registrada: ${assignment.depreciacionTotal.displayDecimal()}",
+                            color = DetailTeal,
+                            fontSize = 12.sp
+                        )
                     }
                 }
             }
@@ -1925,8 +2401,18 @@ private fun EquipmentTimeButton(label: String, time: String, modifier: Modifier 
 @Composable
 private fun EquipmentInfoRow(label: String, value: String, emphasized: Boolean = false) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = if (emphasized) DetailInk else DetailMuted, fontSize = 13.sp, fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal)
-        Text(value, color = if (emphasized) DetailTeal else DetailInk, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            label,
+            color = if (emphasized) DetailInk else DetailMuted,
+            fontSize = 13.sp,
+            fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal
+        )
+        Text(
+            value,
+            color = if (emphasized) DetailTeal else DetailInk,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 

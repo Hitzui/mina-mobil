@@ -692,7 +692,7 @@ private fun OrderCard(order: OrdenTrabajo, onShowOrder: (Long) -> Unit, onEditOr
                     Text("◉  Ver", color = Teal, fontWeight = FontWeight.SemiBold)
                 }
                 if (onEditOrder != null) {
-                    TextButton(onClick = { onEditOrder(order.id) }) {
+                    TextButton(enabled = order.tipoTrabajo != "tratamiento_lama", onClick = { onEditOrder(order.id) }) {
                         Text("✎  Editar", color = Teal, fontWeight = FontWeight.SemiBold)
                     }
                 }

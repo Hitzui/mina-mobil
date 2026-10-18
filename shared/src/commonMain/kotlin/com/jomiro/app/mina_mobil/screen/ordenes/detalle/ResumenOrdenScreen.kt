@@ -77,6 +77,27 @@ fun ResumenOrdenScreen(
             SummaryMetric("Costos generales", "NIO ${generalTotal.displaySummary()}", "Incluye $generalMissing registro(s) sin equivalente NIO")
             SummaryMetric("Costos conocidos de la orden", "NIO ${totalKnown.displaySummary()}", "Los gastos generales se cuentan una sola vez")
         }
+        detalle.resultadoFinanciero?.let { financial ->
+            Text("Rentabilidad de la orden", color = SummaryInk, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+            SummaryMetric(
+                "Resultado real conocido · económico, no caja",
+                financial.resultadoRealNio?.let { "${financial.moneda} ${it.displaySummary()}" } ?: "Sin ingresos registrados",
+                "Ingresos registrados + oro propio valorizado − costo total. No registres ese mismo oro otra vez como ingreso.",
+            )
+            SummaryMetric(
+                "Resultado proyectado según acuerdo",
+                financial.resultadoProyectadoNio?.let { "${financial.moneda} ${it.displaySummary()}" } ?: "Sin acuerdo valorable",
+                "Tarifa pactada y oro propio liquidado/valorizado − costo total",
+            )
+            SummaryMetric(
+                "Participación de oro de la empresa",
+                "${financial.moneda} ${financial.oroEmpresaNio.displaySummary()}",
+                "${financial.oroEmpresaGramos.displaySummary()} g · cotización histórica por fecha de liquidación",
+            )
+            if (financial.datosIncompletos) SummaryNotice(
+                "Resultado provisional: hay costos, ingresos, tarifa o liquidaciones pendientes de conversión/valoración o confirmación.",
+            )
+        }
         SummaryMetric(
             "Avance de procesos",
             "${detalle.procesos.count { it.estado.equals("Finalizado", true) }} de ${detalle.procesos.size} finalizados",
@@ -139,7 +160,7 @@ private fun directProcessCost(detail: DetalleOrdenTrabajo, process: ProcesoOrden
     val manualCosts = process.costos
     val materials = process.materiales
     val amount = works.mapNotNull { it.totalNio?.toDoubleOrNull() }.sum() +
-        equipment.sumOf { it.depreciacionTotal } +
+        equipment.sumOf { it.costoTotalNio } +
         manualCosts.mapNotNull { it.totalNio }.sum() +
         materials.mapNotNull { it.totalNio }.sum()
     val missing = works.count { it.totalNio?.toDoubleOrNull() == null } +

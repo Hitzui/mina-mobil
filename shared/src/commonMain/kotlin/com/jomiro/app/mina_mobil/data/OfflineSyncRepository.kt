@@ -27,6 +27,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class OfflineSyncRepository(
     private val client: HttpClient,
@@ -34,6 +36,8 @@ class OfflineSyncRepository(
     private val sessions: SessionRepository,
     private val database: MinaDatabase,
 ) {
+    private val uploadMutex = Mutex()
+    private var uploading = false
     fun downloaded(ownerId: Long): Boolean = database.clientCacheQueries.getOfflineSnapshot(ownerId).executeAsOneOrNull() != null
 
     fun snapshotDownloadedAt(ownerId: Long): String? =
@@ -105,6 +109,7 @@ class OfflineSyncRepository(
         localEntityId: Long? = null,
         localEntityPayload: ((Long) -> JsonObject)? = null,
     ): Long {
+        if (uploading) throw OfflineSyncException("Espere a que termine la sincronización antes de registrar otro movimiento.")
         var localId = 0L
         database.transaction {
             localId = if (localEntityType != null) localEntityId
@@ -127,6 +132,7 @@ class OfflineSyncRepository(
     }
 
     suspend fun download(ownerId: Long) {
+        if (pendingCount(ownerId) > 0 || uploading) throw OfflineSyncException("Hay operaciones o cobros pendientes. Súbalos antes de reemplazar la descarga; no se borraron los pendientes.")
         val session = sessions.current() ?: throw OfflineSyncException("La sesión expiró. Inicia sesión nuevamente.")
         var page = 1
         var lastPage = 1
@@ -200,7 +206,57 @@ class OfflineSyncRepository(
         }
     }
 
-    suspend fun upload(ownerId: Long) {
+    suspend fun upload(ownerId: Long) = uploadMutex.withLock {
+        uploading = true
+        val payments = localEntities(ownerId).filter { it.type == "collection" || it.type == "tracking_pending" }
+        fun mark(entity: OfflineLocalEntity, status: String) = saveLocalEntity(ownerId, entity.id, entity.type, buildJsonObject {
+            entity.payload.forEach { (key, value) -> put(key, value) }
+            put("sync_status", status)
+        })
+        payments.forEach { mark(it, "unknown") }
+        try {
+            uploadBatch(ownerId)
+        } catch (error: RejectedUploadException) {
+            payments.filter { it.payload["sync_status"]?.jsonPrimitive?.content != "unknown" }
+                .forEach { mark(it, "rejected") }
+            throw error
+        } finally {
+            uploading = false
+        }
+    }
+
+    fun removePendingCollection(ownerId: Long, id: Long) {
+        if (uploading) throw OfflineSyncException("Espere a que termine la sincronización.")
+        val entity = localEntities(ownerId).firstOrNull { it.id == id && it.type == "collection" }
+            ?: throw OfflineSyncException("No se encontró el cobro pendiente.")
+        if (entity.payload["sync_status"]?.jsonPrimitive?.content == "unknown") {
+            throw OfflineSyncException("El envío no tiene respuesta confirmada. Reintente subir el mismo pago para conocer su resultado, sin registrarlo de nuevo.")
+        }
+        database.transaction {
+            database.clientCacheQueries.listPendingSyncOperations(ownerId).executeAsList()
+                .filter { it.operation_type == "collection.create" }
+                .filter { ApiJson.instance.parseToJsonElement(it.payload).jsonObject["local_id"]?.jsonPrimitive?.content?.toLongOrNull() == id }
+                .forEach { database.clientCacheQueries.deletePendingSyncOperation(ownerId, it.id) }
+            database.clientCacheQueries.deleteOfflineEntity(ownerId, id)
+        }
+    }
+
+    fun removePendingTracking(ownerId: Long, orderId: Long) {
+        if (uploading) throw OfflineSyncException("Espere a que termine la sincronización.")
+        val entities = localEntities(ownerId).filter { it.type == "tracking_pending" && it.payload["order_id"]?.jsonPrimitive?.content?.toLongOrNull() == orderId }
+        if (entities.any { it.payload["sync_status"]?.jsonPrimitive?.content == "unknown" }) {
+            throw OfflineSyncException("Hay un envío sin respuesta confirmada. Reintente subirlo; no se puede quitar porque pudo haberse aplicado.")
+        }
+        val ids = entities.map { it.id }.toSet()
+        database.transaction {
+            database.clientCacheQueries.listPendingSyncOperations(ownerId).executeAsList().filter {
+                ApiJson.instance.parseToJsonElement(it.payload).jsonObject["local_id"]?.jsonPrimitive?.content?.toLongOrNull() in ids
+            }.forEach { database.clientCacheQueries.deletePendingSyncOperation(ownerId, it.id) }
+            ids.forEach { database.clientCacheQueries.deleteOfflineEntity(ownerId, it) }
+        }
+    }
+
+    private suspend fun uploadBatch(ownerId: Long) {
         val session = sessions.current() ?: throw OfflineSyncException("La sesión expiró. Inicia sesión nuevamente.")
         val operations = database.clientCacheQueries.listPendingSyncOperations(ownerId).executeAsList()
             .map { row ->
@@ -222,7 +278,15 @@ class OfflineSyncRepository(
             setBody(ApiJson.instance.encodeToString(UploadOperationsDto(operations)))
         }
         val body = response.bodyAsText()
-        if (response.status.value !in 200..299) throw OfflineSyncException(apiMessage(body))
+        if (response.status.value !in 200..299) {
+            val rolledBack = runCatching { ApiJson.instance.parseToJsonElement(body).jsonObject["rolled_back"]?.jsonPrimitive?.content == "true" }.getOrDefault(false)
+            if (rolledBack) throw RejectedUploadException(apiMessage(body))
+            throw OfflineSyncException(apiMessage(body))
+        }
+        val confirmedCount = runCatching {
+            ApiJson.instance.parseToJsonElement(body).jsonObject["data"]?.jsonObject?.get("uploaded")?.jsonPrimitive?.content?.toIntOrNull()
+        }.getOrNull()
+        if (confirmedCount != operations.size) throw OfflineSyncException("La respuesta no confirma todas las operaciones enviadas. Se conservaron los pendientes; reintente el mismo envío.")
         database.transaction {
             database.clientCacheQueries.clearPendingSyncOperations(ownerId)
             database.clientCacheQueries.clearOfflineSnapshot(ownerId)
@@ -241,7 +305,8 @@ class OfflineSyncRepository(
 
 data class OfflineLocalEntity(val id: Long, val type: String, val payload: JsonObject)
 
-class OfflineSyncException(message: String) : Exception(message)
+open class OfflineSyncException(message: String) : Exception(message)
+private class RejectedUploadException(message: String) : OfflineSyncException(message)
 
 enum class ConnectionMode(val value: String) {
     ONLINE("online"),

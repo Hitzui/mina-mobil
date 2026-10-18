@@ -10,6 +10,7 @@ data class OrdenTrabajo(
     val unidadPeso: String?,
     val estado: String,
     val codigoEstado: Int,
+    val tipoTrabajo: String = "servicio",
 )
 
 data class PaginaOrdenes(
@@ -46,6 +47,23 @@ data class DetalleOrdenTrabajo(
     val liquidaciones: List<LiquidacionOrdenTrabajo> = emptyList(),
     val trabajosEmpleados: List<TrabajoEmpleadoOrden> = emptyList(),
     val equipos: List<EquipoProcesoOrden> = emptyList(),
+    val resultadoFinanciero: ResultadoFinancieroOrden? = null,
+)
+
+data class ResultadoFinancieroOrden(
+    val moneda: String,
+    val modalidad: String,
+    val ingresosRegistradosNio: Double,
+    val oroEmpresaGramos: Double,
+    val oroEmpresaNio: Double,
+    val oroPendienteValoracion: Int,
+    val tarifaPactadaNio: Double,
+    val ingresoRealConocidoNio: Double,
+    val ingresoProyectadoNio: Double,
+    val costoTotalNio: Double,
+    val resultadoRealNio: Double?,
+    val resultadoProyectadoNio: Double?,
+    val datosIncompletos: Boolean,
 )
 
 data class EquipoProcesoOrden(
@@ -231,6 +249,8 @@ data class AcuerdoOrdenTrabajo(
     val monedaId: Long = 0,
     val observaciones: String?,
     val activo: Boolean,
+    val lamaDestino: String = "sin_definir",
+    val lamaPorcentajeEmpresa: String? = null,
 )
 
 data class TipoParticipacionOpcion(val id: Long, val nombre: String)

@@ -81,6 +81,7 @@ fun MaterialesProcesoScreen(
 
     if (showForm && options != null) {
         MaterialFormScreen(
+            modifier = modifier,
             options = options!!,
             saving = saving,
             error = error,
@@ -191,6 +192,7 @@ private fun MaterialFormScreen(
     error: String?,
     onDismiss: () -> Unit,
     onSave: (ProductoMateriaPrima, String, Double, String?) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     var productId by remember { mutableStateOf<Long?>(null) }
     var date by remember { mutableStateOf(options.fecha) }
@@ -204,7 +206,7 @@ private fun MaterialFormScreen(
     val valid = product != null && date.length >= 10 && qty != null && qty > 0 && qty <= available + 0.0005
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

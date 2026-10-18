@@ -36,6 +36,8 @@ fun startAppKoin(database: MinaDatabase, httpClient: HttpClient): KoinApplicatio
                 single { ClientesRepository(get(), get(), get(), get(), get()) }
                 single { EmpleadosRepository(get(), get(), get(), get()) }
                 single { OrdenesRepository(get(), get(), get(), get()) }
+                single { com.jomiro.app.mina_mobil.data.ordenes.SeguimientoRepository(get(), get(), get(), get()) }
+                single { com.jomiro.app.mina_mobil.data.ordenes.CobrosRepository(get(), get(), get(), get()) }
                 viewModel { LoginViewModel(get()) }
                 viewModel { InicioViewModel(get()) }
                 viewModel { ClientesListadoViewModel(get()) }

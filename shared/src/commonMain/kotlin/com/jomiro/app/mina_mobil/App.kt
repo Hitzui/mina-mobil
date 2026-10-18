@@ -301,6 +301,8 @@ private fun SignedInScreen(
     var selectedOrderId by remember { mutableStateOf<Long?>(null) }
     var selectedOrderSection by remember { mutableStateOf<OrdenDetalleSeccion?>(null) }
     var showingOrderSummary by remember { mutableStateOf(false) }
+    var showingLama by remember { mutableStateOf(false) }
+    var showingCobros by remember { mutableStateOf(false) }
     var equipmentProcessId by remember { mutableStateOf<Long?>(null) }
     var workProcessId by remember { mutableStateOf<Long?>(null) }
     var costProcessId by remember { mutableStateOf<Long?>(null) }
@@ -342,6 +344,8 @@ private fun SignedInScreen(
                                 selectedOrderId = null
                                 selectedOrderSection = null
                                 showingOrderSummary = false
+                                 showingLama = false
+                                 showingCobros = false
                                 equipmentProcessId = null
                                 workProcessId = null
                                 costProcessId = null
@@ -377,6 +381,8 @@ private fun SignedInScreen(
                         Text(
                             when {
                                 selectedSection != AppSection.WORK_ORDERS || selectedOrderId == null -> selectedSection.title
+                                 showingLama -> "Lama y recuperación"
+                                 showingCobros -> "Cobros de la orden"
                                 workProcessId != null -> "Agregar trabajo"
                                 materialsProcessId != null -> "Materia prima consumida"
                                 costProcessId != null -> "Costos del proceso"
@@ -393,7 +399,9 @@ private fun SignedInScreen(
                     navigationIcon = {
                         if (selectedSection == AppSection.WORK_ORDERS && selectedOrderId != null) {
                             IconButton(onClick = {
-                                if (workProcessId != null) workProcessId = null
+                                 if (showingCobros) showingCobros = false
+                                 else if (showingLama) showingLama = false
+                                else if (workProcessId != null) workProcessId = null
                                 else if (materialsProcessId != null) materialsProcessId = null
                                 else if (costProcessId != null) costProcessId = null
                                 else if (editingOrder) editingOrder = false
@@ -438,6 +446,8 @@ private fun SignedInScreen(
                         selectedOrderId = orderId
                         selectedOrderSection = null
                         showingOrderSummary = true
+                         showingLama = false
+                         showingCobros = false
                         equipmentProcessId = null
                         workProcessId = null
                         costProcessId = null
@@ -502,6 +512,8 @@ private fun SignedInScreen(
                             canCreate = canCreateOrders,
                             canEdit = canEditOrders,
                             onShowOrder = {
+                                 showingLama = false
+                                 showingCobros = false
                                 selectedOrderSection = null
                                 showingOrderSummary = false
                                 equipmentProcessId = null
@@ -512,6 +524,8 @@ private fun SignedInScreen(
                                 selectedOrderId = it
                             },
                             onEditOrder = {
+                                 showingLama = false
+                                 showingCobros = false
                                 selectedOrderSection = null
                                 showingOrderSummary = false
                                 equipmentProcessId = null
@@ -569,6 +583,17 @@ private fun SignedInScreen(
                             seccion = selectedOrderSection,
                             onSelectSection = { selectedOrderSection = it },
                             showingSummary = showingOrderSummary,
+                             showingLama = showingLama,
+                             showingCobros = showingCobros,
+                             onOpenCobros = { showingCobros = true },
+                             onBackFromCobros = { showingCobros = false },
+                             onOpenCobroIncomes = { showingCobros = false; showingOrderSummary = false; selectedOrderSection = OrdenDetalleSeccion.INGRESOS },
+                             onOpenCobroUpload = { showingCobros = false; selectedOrderId = null; selectedOrderSection = null; selectedSection = AppSection.UPLOAD },
+                            onOpenLama = { showingLama = true },
+                            onBackFromLama = { showingLama = false },
+                            onOpenLamaOrder = { selectedOrderId = it; showingLama = true },
+                            onOpenLamaAgreement = { showingLama = false; selectedOrderSection = OrdenDetalleSeccion.ACUERDOS; showingOrderSummary = false },
+                            onOpenTreatmentProcesses = { showingLama = false; selectedOrderSection = null; showingOrderSummary = false },
                             onOpenSummary = { showingOrderSummary = true },
                             modifier = Modifier.padding(contentPadding),
                         )

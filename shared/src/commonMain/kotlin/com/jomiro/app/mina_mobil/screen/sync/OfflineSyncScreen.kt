@@ -47,18 +47,18 @@ fun OfflineSyncScreen(
     val viewModel: OfflineSyncViewModel = koinViewModel()
     val state by viewModel.state.collectAsState()
     var showConfirmation by remember { mutableStateOf(false) }
-    LaunchedEffect(userId) { viewModel.load(userId) }
+    LaunchedEffect(userId, upload) { viewModel.load(userId) }
     LaunchedEffect(userId, state.downloaded, state.message, state.error) { onDownloadedChanged(state.downloaded) }
     LaunchedEffect(state.running) { onRunningChanged(state.running) }
 
     if (showConfirmation) {
         AlertDialog(
             onDismissRequest = { showConfirmation = false },
-            title = { Text(if (upload) "Confirmar Upload" else "Confirmar descarga") },
+            title = { Text(if (upload) "Confirmar subida" else "Confirmar descarga") },
             text = {
                 Text(
-                    if (upload) "Se enviarán los cambios pendientes. Al finalizar se borrará la copia local y deberá descargar los datos nuevamente. ¿Desea continuar?"
-                    else "La descarga reemplazará todos los datos locales y eliminará los cambios pendientes que no se hayan subido. ¿Desea continuar?",
+                    if (upload) "Se enviarán los cambios y cobros pendientes. Los pagos aceptados quedarán confirmados en caja. Cada pendiente conserva su identificador para reintentarlo sin duplicar el cobro. Al terminar deberá descargar los datos nuevamente. ¿Desea continuar?"
+                    else "La descarga actualizará la copia de los datos. Si hay cambios o pagos pendientes, primero debe subirlos: no se borrarán para reemplazar la descarga. ¿Desea continuar?",
                 )
             },
             confirmButton = {
@@ -80,8 +80,8 @@ fun OfflineSyncScreen(
             Text(if (upload) "Subir cambios" else "Descargar datos", color = SyncInk, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(14.dp))
             Text(
-                if (upload) "Envía al sistema web las operaciones guardadas en este dispositivo. Al terminar, la copia local se limpia y deberá descargar los datos nuevamente."
-                else "La descarga reemplazará los datos guardados en este dispositivo. Asegúrese de subir los cambios pendientes antes de continuar.",
+                if (upload) "Envía las operaciones y pagos guardados en este dispositivo. Si hubo un envío sin respuesta, reintente aquí el mismo pendiente. Al terminar, vuelva a descargar para consultar saldos actualizados."
+                else "Actualiza los datos guardados en este dispositivo. Primero suba las operaciones y cobros pendientes; la descarga no los eliminará.",
                 color = SyncMuted,
                 fontSize = 14.sp,
             )
@@ -90,13 +90,13 @@ fun OfflineSyncScreen(
             Spacer(Modifier.height(24.dp))
             Button(
                 onClick = { showConfirmation = true },
-                enabled = !state.running && (!upload || state.downloaded),
+                enabled = !state.running && (if (upload) state.pending > 0 || state.downloaded else state.pending == 0L),
                 modifier = Modifier.fillMaxWidth().height(54.dp),
                 shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = SyncTeal),
             ) {
                 if (state.running) CircularProgressIndicator(modifier = Modifier.height(22.dp), color = Color.White, strokeWidth = 2.dp)
-                else Text(if (upload) "Upload" else "Descargar datos", fontWeight = FontWeight.SemiBold)
+                else Text(if (upload) "Subir datos pendientes" else "Descargar datos", fontWeight = FontWeight.SemiBold)
             }
             state.message?.let {
                 Spacer(Modifier.height(16.dp))

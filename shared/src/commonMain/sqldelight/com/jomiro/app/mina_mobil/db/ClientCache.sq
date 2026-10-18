@@ -79,6 +79,9 @@ VALUES (:ownerId, :operationType, :operationKey, :payload, :createdAt);
 clearPendingSyncOperations:
 DELETE FROM pending_sync_operation WHERE owner_id = :ownerId;
 
+deletePendingSyncOperation:
+DELETE FROM pending_sync_operation WHERE owner_id = :ownerId AND id = :id;
+
 clearDownloadedMobileData:
 DELETE FROM cached_client WHERE owner_id = :ownerId;
 
@@ -86,7 +89,7 @@ listOfflineEntities:
 SELECT * FROM offline_local_entity WHERE owner_id = :ownerId ORDER BY local_id;
 
 nextOfflineEntityId:
-SELECT COALESCE(MIN(local_id), 0) - 1 FROM offline_local_entity WHERE owner_id = :ownerId;
+SELECT COALESCE(MIN(CASE WHEN local_id < 0 THEN local_id END), 0) - 1 FROM offline_local_entity WHERE owner_id = :ownerId;
 
 saveOfflineEntity:
 INSERT OR REPLACE INTO offline_local_entity (owner_id, local_id, entity_type, payload)

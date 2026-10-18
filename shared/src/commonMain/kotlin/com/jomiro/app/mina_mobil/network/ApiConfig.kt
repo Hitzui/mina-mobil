@@ -6,7 +6,7 @@ import com.jomiro.app.mina_mobil.getPlatform
  * Único punto de configuración del API. Para producción, sustituir esta URL
  * por la dirección HTTPS del servidor.
  */
-const val API_BASE_URL = "http://192.168.123.33/mina/public/api/v1"
+const val API_BASE_URL = "http://192.168.123.34/mina/public/api/v1"
 
 /** Android Emulator reserva 10.0.2.2 para acceder al localhost del equipo host. */
 fun resolvedApiBaseUrl(): String {

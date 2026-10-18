@@ -41,6 +41,33 @@ class OrdenesRepository(
     private val sessions: SessionRepository,
     private val offlineSync: OfflineSyncRepository,
 ) {
+    suspend fun lama(
+        ordenId: Long,
+        accion: String = "",
+        metodo: io.ktor.http.HttpMethod = io.ktor.http.HttpMethod.Get,
+        datos: JsonObject? = null,
+    ): LamaGestion {
+        val session = sessions.current() ?: throw OrdenesException("La sesión expiró.")
+        if (offlineSync.isOfflineMode(session.userId)) {
+            if (metodo != io.ktor.http.HttpMethod.Get) throw OrdenesException("Los lotes y tratamientos de lama requieren Online. Suba sus pendientes y cambie de modo para continuar.")
+            val orden = offlineSync.offlineSnapshot(session.userId)?.get("orders")?.jsonArray
+                ?.firstOrNull { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull?.toLongOrNull() == ordenId }?.jsonObject
+            val lama = orden?.get("lama") ?: throw OrdenesException("La descarga no incluye los lotes de esta orden. Actualice su descarga cuando tenga conexión.")
+            return ApiJson.instance.decodeFromString<LamaGestion>(lama.toString()).copy(
+                offline = true, canRegister = false, canStart = false, canEdit = false, canRecover = false, canValue = false,
+            )
+        }
+        val endpoint = "${baseUrl.trimEnd('/')}/orders/$ordenId/lama" + if (accion.isEmpty()) "" else "/$accion"
+        val response = client.request(endpoint) {
+            method = metodo
+            headers { set(HttpHeaders.Authorization, "Bearer ${session.token}"); set(HttpHeaders.Accept, "application/json") }
+            if (datos != null) { contentType(ContentType.Application.Json); setBody(datos.toString()) }
+        }
+        val body = response.bodyAsText()
+        if (response.status.value !in 200..299) throw apiException(body, "No se pudo actualizar la lama de esta orden.")
+        return ApiJson.instance.decodeFromString<LamaResponse>(body).data
+    }
+
     suspend fun usoEquipo(
         ordenId: Long,
         procesoId: Long,
@@ -753,6 +780,8 @@ class OrdenesRepository(
         monedaId: Long,
         observaciones: String,
         activo: Boolean,
+        lamaDestino: String = "sin_definir",
+        lamaPorcentajeEmpresa: Double? = null,
     ) {
         val session = sessions.current() ?: throw OrdenesException("La sesión expiró. Inicia sesión nuevamente.")
         val payload = buildJsonObject {
@@ -765,6 +794,8 @@ class OrdenesRepository(
             put("currency_id", monedaId)
             put("observations", observaciones)
             put("active", activo)
+            put("lama_destino", lamaDestino)
+            lamaPorcentajeEmpresa?.let { put("lama_porcentaje_empresa", it) }
         }
         if (offlineSync.isOfflineMode(session.userId)) {
             val agreementOptions = opcionesAcuerdo()
@@ -785,6 +816,8 @@ class OrdenesRepository(
                     put("currency", agreementOptions.monedas.firstOrNull { it.id == monedaId }?.codigo.orEmpty())
                     put("observations", observaciones)
                     put("active", activo)
+                    put("lama_destino", lamaDestino)
+                    lamaPorcentajeEmpresa?.let { put("lama_porcentaje_empresa", it) }
                 }
             }
             return
@@ -1385,6 +1418,7 @@ class OrdenesRepository(
             ?.let { raw -> runCatching { ApiJson.instance.decodeFromString<List<OrdenTrabajoDetalleDto>>(raw.toString()) }.getOrNull() }
             .orEmpty().map { dto -> OrdenTrabajoDto(
                 dto.id, dto.code, dto.date, dto.client, dto.description, dto.mineralWeight, dto.weightUnit, dto.status, dto.statusCode,
+                workType = dto.workType,
             ).toModel() }
         val localOrders = offlineSync.localEntities(ownerId).filter { it.type == "order" }.mapNotNull { entity ->
             runCatching { ApiJson.instance.decodeFromString<OrdenTrabajoDto>(entity.payload.toString()).toModel() }.getOrNull()
@@ -1500,6 +1534,7 @@ private fun OrdenTrabajo.toOfflineJson(clientId: Long? = null, unitId: Long? = n
     unitId?.let { put("weight_unit_id", it) }
     put("status", estado)
     put("status_code", codigoEstado)
+    put("work_type", tipoTrabajo)
 }
 
 private fun CostoProcesoTrabajo.toOfflineJson(processId: Long): JsonObject = buildJsonObject {
@@ -2017,6 +2052,7 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
         weightUnit = weightUnit,
         status = status,
         statusCode = statusCode,
+        workType = workType,
     ).toModel(),
     procesos = processes.map { process ->
         ProcesoOrdenTrabajo(
@@ -2082,6 +2118,8 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
             monedaId = agreement.currencyId,
             observaciones = agreement.observations,
             activo = agreement.active,
+            lamaDestino = agreement.lamaDestino,
+            lamaPorcentajeEmpresa = agreement.lamaPorcentajeEmpresa?.contentOrNull,
         )
     },
     liquidaciones = liquidations.map { liquidation ->
@@ -2133,6 +2171,23 @@ private fun OrdenTrabajoDetalleDto.toModel() = DetalleOrdenTrabajo(
             costoInsumosNio = assignment.suppliesCostNio,
         )
     },
+    resultadoFinanciero = financialSummary?.let { summary ->
+        ResultadoFinancieroOrden(
+            moneda = summary.currency,
+            modalidad = summary.modality,
+            ingresosRegistradosNio = summary.registeredIncomeNio?.contentOrNull?.toDoubleOrNull() ?: 0.0,
+            oroEmpresaGramos = summary.companyGoldGrams?.contentOrNull?.toDoubleOrNull() ?: 0.0,
+            oroEmpresaNio = summary.companyGoldNio?.contentOrNull?.toDoubleOrNull() ?: 0.0,
+            oroPendienteValoracion = summary.pendingGoldValuations,
+            tarifaPactadaNio = summary.agreedFeeNio?.contentOrNull?.toDoubleOrNull() ?: 0.0,
+            ingresoRealConocidoNio = summary.knownRealIncomeNio?.contentOrNull?.toDoubleOrNull() ?: 0.0,
+            ingresoProyectadoNio = summary.projectedIncomeNio?.contentOrNull?.toDoubleOrNull() ?: 0.0,
+            costoTotalNio = summary.totalCostNio?.contentOrNull?.toDoubleOrNull() ?: 0.0,
+            resultadoRealNio = summary.actualResultNio?.contentOrNull?.toDoubleOrNull(),
+            resultadoProyectadoNio = summary.projectedResultNio?.contentOrNull?.toDoubleOrNull(),
+            datosIncompletos = summary.incomplete,
+        )
+    },
 )
 
 @Serializable
@@ -2155,6 +2210,7 @@ internal data class OrdenTrabajoDetalleDto(
     @SerialName("weight_unit") val weightUnit: String? = null,
     val status: String,
     @SerialName("status_code") val statusCode: Int,
+    @SerialName("work_type") val workType: String = "servicio",
     val processes: List<ProcesoOrdenDto> = emptyList(),
     val costs: List<CostoOrdenDto> = emptyList(),
     val incomes: List<IngresoOrdenDto> = emptyList(),
@@ -2164,6 +2220,24 @@ internal data class OrdenTrabajoDetalleDto(
     val equipment: List<EquipoProcesoDto> = emptyList(),
     @SerialName("liquidation_agreements") val liquidationAgreements: List<LiquidationAgreementDto> = emptyList(),
     @SerialName("weight_unit_id") val weightUnitId: Long? = null,
+    @SerialName("financial_summary") val financialSummary: FinancialSummaryDto? = null,
+)
+
+@Serializable
+internal data class FinancialSummaryDto(
+    val currency: String = "NIO",
+    val modality: String = "sin_referencia",
+    @SerialName("ingresos_registrados_nio") val registeredIncomeNio: JsonPrimitive? = null,
+    @SerialName("oro_empresa_gramos") val companyGoldGrams: JsonPrimitive? = null,
+    @SerialName("oro_empresa_nio") val companyGoldNio: JsonPrimitive? = null,
+    @SerialName("oro_pendiente_valoracion") val pendingGoldValuations: Int = 0,
+    @SerialName("tarifa_pactada_nio") val agreedFeeNio: JsonPrimitive? = null,
+    @SerialName("ingreso_real_conocido_nio") val knownRealIncomeNio: JsonPrimitive? = null,
+    @SerialName("ingreso_proyectado_nio") val projectedIncomeNio: JsonPrimitive? = null,
+    @SerialName("costo_total_nio") val totalCostNio: JsonPrimitive? = null,
+    @SerialName("resultado_real_nio") val actualResultNio: JsonPrimitive? = null,
+    @SerialName("resultado_proyectado_nio") val projectedResultNio: JsonPrimitive? = null,
+    @SerialName("datos_incompletos") val incomplete: Boolean = false,
 )
 
 @Serializable
@@ -2216,6 +2290,8 @@ internal data class AcuerdoOrdenDto(
     @SerialName("currency_id") val currencyId: Long = 0,
     val observations: String? = null,
     val active: Boolean = false,
+    @SerialName("lama_destino") val lamaDestino: String = "sin_definir",
+    @SerialName("lama_porcentaje_empresa") val lamaPorcentajeEmpresa: JsonPrimitive? = null,
 )
 
 @Serializable
@@ -2347,6 +2423,7 @@ internal data class OrdenTrabajoDto(
     @SerialName("weight_unit") val weightUnit: String? = null,
     val status: String,
     @SerialName("status_code") val statusCode: Int,
+    @SerialName("work_type") val workType: String = "servicio",
 ) {
     fun toModel() = OrdenTrabajo(
         id = id,
@@ -2358,6 +2435,7 @@ internal data class OrdenTrabajoDto(
         unidadPeso = weightUnit,
         estado = status,
         codigoEstado = statusCode,
+        tipoTrabajo = workType,
     )
 }
 

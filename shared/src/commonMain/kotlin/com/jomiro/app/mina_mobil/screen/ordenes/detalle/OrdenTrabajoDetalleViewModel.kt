@@ -419,12 +419,14 @@ class OrdenTrabajoDetalleViewModel(
         currencyId: Long,
         observations: String,
         active: Boolean,
+        lamaDestino: String = "sin_definir",
+        lamaEmpresa: Double? = null,
     ) {
         if (mutableState.value.guardandoAcuerdo) return
         mutableState.update { it.copy(guardandoAcuerdo = true, acuerdoGuardado = false, errorAcuerdo = null) }
         viewModelScope.launch {
             runCatching {
-                repository.guardarAcuerdo(orderId, agreementId, typeId, clientPercentage, companyPercentage, serviceFee, currencyId, observations, active)
+                repository.guardarAcuerdo(orderId, agreementId, typeId, clientPercentage, companyPercentage, serviceFee, currencyId, observations, active, lamaDestino, lamaEmpresa)
                 repository.detalle(orderId)
             }.onSuccess { detail ->
                 mutableState.update { it.copy(detalle = detail, guardandoAcuerdo = false, acuerdoGuardado = true) }

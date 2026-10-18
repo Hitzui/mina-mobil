@@ -63,7 +63,7 @@ fun AcuerdosOrdenScreen(
     canEdit: Boolean,
     canDelete: Boolean,
     onLoadOptions: () -> Unit,
-    onSave: (Long?, Long, Double?, Double?, Double?, Long, String, Boolean) -> Unit,
+    onSave: (Long?, Long, Double?, Double?, Double?, Long, String, Boolean, String, Double?) -> Unit,
     onDelete: (AcuerdoOrdenTrabajo) -> Unit,
     onClearMessage: () -> Unit,
     modifier: Modifier = Modifier,
@@ -152,7 +152,7 @@ private fun AgreementFormDialog(
     saving: Boolean,
     error: String?,
     onDismiss: () -> Unit,
-    onSave: (Long?, Long, Double?, Double?, Double?, Long, String, Boolean) -> Unit,
+    onSave: (Long?, Long, Double?, Double?, Double?, Long, String, Boolean, String, Double?) -> Unit,
 ) {
     var typeId by remember(agreement, options) { mutableStateOf(agreement?.tipoParticipacionId?.takeIf { it > 0 } ?: options.tipos.firstOrNull()?.id) }
     var currencyId by remember(agreement, options) { mutableStateOf(agreement?.monedaId?.takeIf { it > 0 } ?: options.monedaBaseId ?: options.monedas.firstOrNull()?.id) }
@@ -162,6 +162,8 @@ private fun AgreementFormDialog(
     var fee by remember(agreement) { mutableStateOf(agreement?.tarifaServicio.orEmpty()) }
     var observations by remember(agreement) { mutableStateOf(agreement?.observaciones.orEmpty()) }
     var active by remember(agreement) { mutableStateOf(agreement?.activo ?: true) }
+    var lamaDestino by remember(agreement) { mutableStateOf(agreement?.lamaDestino ?: "sin_definir") }
+    var lamaEmpresa by remember(agreement) { mutableStateOf(agreement?.lamaPorcentajeEmpresa.orEmpty()) }
     var typeMenu by remember { mutableStateOf(false) }
     var currencyMenu by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
@@ -211,6 +213,18 @@ private fun AgreementFormDialog(
                         formOptions.monedas.forEach { item -> DropdownMenuItem(text = { Text("${item.codigo} — ${item.nombre}") }, onClick = { currencyId = item.id; currencyMenu = false }) }
                     }
                 }
+                Text("Lama después del servicio", color = AgreementTeal, fontWeight = FontWeight.SemiBold)
+                Text("Indique quién conserva el material y cómo se reparte el oro que se obtenga de esa lama. Es independiente de la tarifa y del oro original.", color = AgreementMuted, fontSize = 12.sp)
+                listOf("sin_definir" to "Todavía no acordado", "empresa" to "La empresa conserva la lama", "cliente" to "El cliente conserva la lama").forEach { (value, label) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = lamaDestino == value, onClick = { lamaDestino = value })
+                        Text(label, Modifier.clickable { lamaDestino = value })
+                    }
+                }
+                if (lamaDestino != "sin_definir") {
+                    NumberField("Oro de la lama: % empresa", lamaEmpresa, { lamaEmpresa = it }, percent = true)
+                    Text("100 = todo para la empresa; 0 = todo para el cliente. El resto corresponde al cliente. Después registre los lotes desde Lama y recuperación posterior. Los lotes anteriores conservan su reparto.", color = AgreementMuted, fontSize = 12.sp)
+                }
                 OutlinedTextField(
                     value = observations,
                     onValueChange = { observations = it.take(5000) },
@@ -235,6 +249,7 @@ private fun AgreementFormDialog(
                     modality == "porcentaje" && kotlin.math.abs(client!! + company!! - 100.0) > 0.0001 -> "Los porcentajes deben sumar 100%."
                     modality == "tarifa" && (service == null || service <= 0.0) -> "La tarifa debe ser mayor que cero."
                     chosenCurrency == null -> "No hay una moneda disponible para el acuerdo."
+                    lamaDestino != "sin_definir" && (lamaEmpresa.toDoubleOrNull()?.let { it.isFinite() && it in 0.0..100.0 } != true) -> "Indique el porcentaje de oro de la lama para la empresa, de 0 a 100."
                     else -> null
                 }
                 if (validationError == null && chosenType != null && chosenCurrency != null) {
@@ -247,6 +262,8 @@ private fun AgreementFormDialog(
                         chosenCurrency,
                         observations,
                         active,
+                        lamaDestino,
+                        if (lamaDestino == "sin_definir") null else lamaEmpresa.toDoubleOrNull(),
                     )
                 }
             }) { Text(if (saving) "Guardando…" else "Guardar") }
@@ -298,6 +315,7 @@ private fun AgreementCard(
             if (agreement.modalidad == "tarifa") Text("Tarifa de servicio: ${agreement.tarifaServicio ?: "—"} ${agreement.moneda.orEmpty()}", color = AgreementInk)
             else Text("Cliente: ${agreement.porcentajeCliente ?: "—"}% · Empresa: ${agreement.porcentajeEmpresa ?: "—"}%", color = AgreementInk)
             agreement.observaciones?.takeIf(String::isNotBlank)?.let { Text(it, color = AgreementMuted, fontSize = 13.sp) }
+            if (agreement.lamaDestino != "sin_definir") Text("Lama: conserva ${agreement.lamaDestino} · Oro posterior empresa ${agreement.lamaPorcentajeEmpresa ?: "pendiente"}% / cliente ${agreement.lamaPorcentajeEmpresa?.toDoubleOrNull()?.let { 100 - it } ?: "pendiente"}%", color = AgreementTeal, fontSize = 13.sp)
             if (canEdit || canDelete) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     if (canEdit) TextButton(onClick = onEdit) { Text("Editar", color = AgreementTeal) }

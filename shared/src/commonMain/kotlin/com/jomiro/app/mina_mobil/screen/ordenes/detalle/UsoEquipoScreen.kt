@@ -22,6 +22,7 @@ internal fun UsoEquipoScreen(
     procesoId: Long,
     asignacionId: Long,
     onBack: () -> Unit,
+    modifier: Modifier = Modifier,
     repository: OrdenesRepository = koinInject(),
 ) {
     var data by remember(asignacionId) { mutableStateOf<UsoEquipoDetalle?>(null) }
@@ -63,7 +64,7 @@ internal fun UsoEquipoScreen(
     }
     LaunchedEffect(asignacionId) { ejecutar("usage", HttpMethod.Get, cargarHoras = true) }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         TextButton(onClick = onBack, enabled = !busy) { Text("Volver al proceso") }
         Text(data?.name ?: "Trabajo y consumos del equipo", style = MaterialTheme.typography.titleLarge)
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
